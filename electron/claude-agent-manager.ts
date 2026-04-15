@@ -606,6 +606,9 @@ export class ClaudeAgentManager {
             input,
             suggestions: opts.suggestions,
             decisionReason: opts.decisionReason,
+            title: opts.title,
+            displayName: opts.displayName,
+            description: opts.description,
           })
         })
       }
@@ -656,6 +659,7 @@ export class ClaudeAgentManager {
         canUseTool,
         ...(claudeCodePath ? { pathToClaudeCodeExecutable: claudeCodePath } : {}),
         ...(nodeExecutable !== 'node' || electronFallback ? { executable: nodeExecutable } : {}),
+        env: { CLAUDE_AGENT_SDK_CLIENT_APP: `better-agent-terminal/${app.getVersion()}` },
         stderr: (data: string) => {
           logger.error('[Claude Code stderr]', data)
           stderrOutput += data
@@ -1165,6 +1169,20 @@ export class ClaudeAgentManager {
           session.activeTasks.delete(agentMsg.task_id)
         }
       }
+      if (subtype === 'memory_recall') {
+        const memMsg = message as { memory_files?: string[] }
+        const count = memMsg.memory_files?.length ?? 0
+        logger.log(`[memory_recall] Recalled ${count} memory file(s)`)
+        if (count > 0) {
+          this.addMessage(sessionId, {
+            id: `sys-memory-${Date.now()}`,
+            sessionId,
+            role: 'system',
+            content: `Recalled ${count} memory file(s)`,
+            timestamp: Date.now(),
+          })
+        }
+      }
     }
 
     if (message.type === 'result') {
@@ -1383,6 +1401,10 @@ export class ClaudeAgentManager {
             toolName,
             input,
             suggestions: opts.suggestions,
+            decisionReason: opts.decisionReason,
+            title: opts.title,
+            displayName: opts.displayName,
+            description: opts.description,
           })
         })
       }
@@ -1406,6 +1428,7 @@ export class ClaudeAgentManager {
           ...(claudeCodePath ? { pathToClaudeCodeExecutable: claudeCodePath } : {}),
           ...(nodeExecutable !== 'node' || electronFallback ? { executable: nodeExecutable } : {}),
           ...(session.autoCompactWindow ? { autoCompactWindow: session.autoCompactWindow } : {}),
+          env: { CLAUDE_AGENT_SDK_CLIENT_APP: `better-agent-terminal/${app.getVersion()}` },
         }
 
         // Only resume if the sdkSessionId was created by a V2 session

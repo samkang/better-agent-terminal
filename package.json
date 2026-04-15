@@ -22,8 +22,8 @@
     "test:file-drag": "npx tsx tests/file-drag-to-chat.test.ts"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.104",
-    "@anthropic-ai/claude-code": "^2.1.104",
+    "@anthropic-ai/claude-agent-sdk": "^0.2.109",
+    "@anthropic-ai/claude-code": "^2.1.109",
     "@openai/codex-sdk": "^0.120.0",
     "better-sqlite3": "^12.5.0",
     "uuid": "^9.0.0",
@@ -102,7 +102,10 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["arm64", "universal"]
+          "arch": [
+            "arm64",
+            "universal"
+          ]
         }
       ],
       "icon": "assets/icon-512.png",

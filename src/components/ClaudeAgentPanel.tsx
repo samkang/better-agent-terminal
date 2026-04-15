@@ -74,6 +74,9 @@ interface PendingPermission {
   input: Record<string, unknown>
   suggestions?: unknown[]
   decisionReason?: string
+  title?: string
+  displayName?: string
+  description?: string
 }
 
 interface SlashCommandInfo {
@@ -2826,7 +2829,7 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
             : 'safe'
           }`}
         >
-          <div className="claude-permission-title" dangerouslySetInnerHTML={{ __html: t('claude.allowThisCall', { toolName: pendingPermission.toolName }) }} />
+          <div className="claude-permission-title" dangerouslySetInnerHTML={{ __html: t('claude.allowThisCall', { toolName: pendingPermission.displayName || pendingPermission.toolName }) }} />
           <div className="claude-permission-command">
             {toolInputSummary(pendingPermission.toolName, pendingPermission.input)}
           </div>
@@ -2838,7 +2841,12 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
               </div>
             </div>
           )}
-          {pendingPermission.decisionReason && !planContent && (
+          {pendingPermission.title && !planContent && (
+            <div className="claude-permission-reason">
+              {pendingPermission.title}
+            </div>
+          )}
+          {!pendingPermission.title && pendingPermission.decisionReason && !planContent && (
             <div className="claude-permission-reason">
               {pendingPermission.decisionReason}
             </div>
@@ -3886,14 +3894,14 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
             return <span key="usage5hReset" className="claude-statusline-item" title="5h rate limit resets at">↻{fmtRemaining(new Date(rl.resetsAt))}</span>
           },
           usage7d: () => {
-            const rl = rateLimits['seven_day']
+            const rl = rateLimits['seven_day'] || rateLimits['seven_day_opus']
             if (!rl || rl.utilization == null) return null
             const pct = Math.round(rl.utilization * 100)
             const color = pct >= 80 ? '#e05252' : pct >= 50 ? '#e6a700' : '#89ca78'
             return <span key="usage7d" className="claude-statusline-item" style={{ color }} title={`7d usage: ${pct}%`}>7d:{pct}%</span>
           },
           usage7dReset: () => {
-            const rl = rateLimits['seven_day']
+            const rl = rateLimits['seven_day'] || rateLimits['seven_day_opus']
             if (!rl) return null
             return <span key="usage7dReset" className="claude-statusline-item" title="7d rate limit resets at">↻{fmtRemaining(new Date(rl.resetsAt))}</span>
           },
