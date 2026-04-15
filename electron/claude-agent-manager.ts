@@ -124,6 +124,15 @@ interface SessionMetadata {
   contextTokens: number
   cacheReadTokens: number
   cacheCreationTokens: number
+  // Per-API-call cache breakdown (from latest streaming event)
+  callCacheRead: number
+  callCacheWrite: number
+  lastQueryCalls: number  // Number of API calls in the last query/turn
+  // Per-model usage breakdown (from SDK modelUsage)
+  modelUsage?: Record<string, { inputTokens: number; outputTokens: number; cacheReadInputTokens: number; cacheCreationInputTokens: number; costUSD: number }>
+  // Ephemeral cache write breakdown (aggregate, not per-model)
+  cacheWrite5mTokens?: number
+  cacheWrite1hTokens?: number
 }
 
 interface PendingRequest {
@@ -155,6 +164,7 @@ interface SessionInstance {
   pendingAskUser: Map<string, PendingRequest>
   permissionMode: AppPermissionMode
   effort: 'low' | 'medium' | 'high' | 'max'
+  autoCompactWindow?: number
   model?: string
   messageQueue: QueuedMessage[]
   currentPrompt?: string  // Track the currently running prompt for abort context
@@ -165,6 +175,7 @@ interface SessionInstance {
   v2SessionModel?: string // Model the V2 session was created with (to detect changes)
   worktreeInfo?: WorktreeInfo  // Set when running in worktree isolation
   originalCwd?: string         // Original workspace cwd before worktree redirect
+  cachedContextUsage?: unknown  // Cached getContextUsage() result for after process exits
 }
 
 // Persists SDK session IDs across stop/restart so we can resume conversations
@@ -296,7 +307,7 @@ export class ClaudeAgentManager {
     this.send('claude:tool-result', sessionId, { id: toolId, ...updates })
   }
 
-  async startSession(sessionId: string, options: { cwd: string; prompt?: string; sdkSessionId?: string; permissionMode?: AppPermissionMode; model?: string; effort?: 'low' | 'medium' | 'high' | 'max'; apiVersion?: 'v1' | 'v2'; useWorktree?: boolean; worktreePath?: string; worktreeBranch?: string }): Promise<boolean> {
+  async startSession(sessionId: string, options: { cwd: string; prompt?: string; sdkSessionId?: string; permissionMode?: AppPermissionMode; model?: string; effort?: 'low' | 'medium' | 'high' | 'max'; apiVersion?: 'v1' | 'v2'; useWorktree?: boolean; worktreePath?: string; worktreeBranch?: string; autoCompactWindow?: number }): Promise<boolean> {
     // Prevent duplicate session creation
     if (this.sessions.has(sessionId)) {
       return true
@@ -328,8 +339,21 @@ export class ClaudeAgentManager {
             logger.log(`[Claude] Session ${sessionId.slice(0, 8)} using worktree at ${effectiveCwd}`)
           } catch (err) {
             const errMsg = err instanceof Error ? err.message : String(err)
-            logger.warn(`[Claude] Failed to create worktree, falling back to normal mode: ${errMsg}`)
-            // Will send a warning message after session is created
+            // If worktree directory already exists (e.g. tab closed without cleanup), rehydrate it
+            if (errMsg.includes('already exists')) {
+              const gitRoot = await worktreeManager.getGitRoot(options.cwd)
+              if (gitRoot) {
+                const existingPath = pathModule.join(gitRoot, '.bat-worktrees', sessionId.slice(0, 8))
+                if (fsSync.existsSync(existingPath)) {
+                  worktreeInfo = worktreeManager.rehydrate(sessionId, options.cwd, existingPath, options.worktreeBranch || `bat/worktree-${sessionId.slice(0, 8)}`)
+                  effectiveCwd = existingPath
+                  logger.log(`[Claude] Session ${sessionId.slice(0, 8)} rehydrated existing worktree at ${effectiveCwd}`)
+                }
+              }
+            }
+            if (!worktreeInfo) {
+              logger.warn(`[Claude] Failed to create worktree, falling back to normal mode: ${errMsg}`)
+            }
           }
         }
       }
@@ -364,11 +388,15 @@ export class ClaudeAgentManager {
           contextTokens: 0,
           cacheReadTokens: 0,
           cacheCreationTokens: 0,
+          callCacheRead: 0,
+          callCacheWrite: 0,
+          lastQueryCalls: 0,
         },
         pendingPermissions: new Map(),
         pendingAskUser: new Map(),
         permissionMode: options.permissionMode || 'default',
         effort: options.effort || 'high',
+        autoCompactWindow: options.autoCompactWindow,
         model: options.model,
         messageQueue: [],
         activeTasks: new Map(),
@@ -499,7 +527,7 @@ export class ClaudeAgentManager {
         process.env.ELECTRON_RUN_AS_NODE = '1'
         logger.log('[Claude] Using Electron binary as Node.js runtime (ELECTRON_RUN_AS_NODE=1)')
       }
-      logger.log(`[Claude] runQuery: cwd=${session.cwd}, resumeId=${resumeId || 'none'}, claudeCodePath=${claudeCodePath || 'none'}, nodeExecutable=${nodeExecutable}`)
+      logger.log(`[Claude] runQuery: cwd=${session.cwd}, resumeId=${resumeId || 'none'}, claudeCodePath=${claudeCodePath || 'none'}, nodeExecutable=${nodeExecutable}, autoCompactWindow=${session.autoCompactWindow || 'none'}`)
       const canUseTool: CanUseTool = async (toolName, input, opts) => {
         // Check if this is an AskUserQuestion tool — always show UI
         if (toolName === 'AskUserQuestion') {
@@ -620,6 +648,7 @@ export class ClaudeAgentManager {
         settingSources: ['user', 'project', 'local'],
         thinking: { type: 'enabled' },
         effort: session.effort,
+        ...(session.autoCompactWindow ? { autoCompactWindow: session.autoCompactWindow } : {}),
         toolConfig: { askUserQuestion: { previewFormat: 'html' } },
         agentProgressSummaries: true,
         ...(session.model ? { model: session.model } : {}),
@@ -668,6 +697,11 @@ export class ClaudeAgentManager {
           promptArg = singleMessage()
         }
       }
+
+      // Clear per-query fields so renderer can distinguish streaming vs result
+      session.metadata.modelUsage = undefined
+      session.metadata.cacheWrite5mTokens = undefined
+      session.metadata.cacheWrite1hTokens = undefined
 
       const generator = query({
         prompt: promptArg as Parameters<typeof query>[0]['prompt'],
@@ -927,7 +961,7 @@ export class ClaudeAgentManager {
             const hasActiveTask = session.activeTasks.has(resultBlock.tool_use_id)
             this.updateToolCall(sessionId, resultBlock.tool_use_id, {
               status: hasActiveTask ? 'running' : (resultBlock.is_error ? 'error' : 'completed'),
-              result: resultStr?.slice(0, 2000),
+              result: resultStr,
             })
           }
         }
@@ -947,6 +981,12 @@ export class ClaudeAgentManager {
         const contextTokens = (eventUsage.input_tokens || 0)
           + (eventUsage.cache_creation_input_tokens || 0)
           + (eventUsage.cache_read_input_tokens || 0)
+        // Update current context size (latest API call's input = actual context window usage)
+        if (contextTokens > 0) {
+          session.metadata.contextTokens = contextTokens
+          session.metadata.callCacheRead = eventUsage.cache_read_input_tokens || 0
+          session.metadata.callCacheWrite = eventUsage.cache_creation_input_tokens || 0
+        }
         if (contextTokens > session.metadata.inputTokens) {
           session.metadata.inputTokens = contextTokens
           session.metadata.cacheReadTokens = eventUsage.cache_read_input_tokens || 0
@@ -1131,13 +1171,13 @@ export class ClaudeAgentManager {
       const resultMsg = message as {
         subtype: string
         total_cost_usd?: number
-        usage?: { input_tokens?: number; output_tokens?: number }
+        usage?: { input_tokens?: number; output_tokens?: number; cache_creation?: { ephemeral_5m_input_tokens?: number; ephemeral_1h_input_tokens?: number } | null }
         duration_ms?: number
         num_turns?: number
         result?: string
         errors?: string[]
         deferred_tool_use?: { id: string; name: string; input: Record<string, unknown> }
-        modelUsage?: Record<string, { contextWindow?: number; inputTokens?: number; outputTokens?: number; cacheReadInputTokens?: number; cacheCreationInputTokens?: number; maxOutputTokens?: number }>
+        modelUsage?: Record<string, { contextWindow?: number; inputTokens?: number; outputTokens?: number; cacheReadInputTokens?: number; cacheCreationInputTokens?: number; costUSD?: number; maxOutputTokens?: number }>
       }
 
       logger.log(`[Claude result] raw: subtype=${resultMsg.subtype}, cost=${resultMsg.total_cost_usd}, turns=${resultMsg.num_turns}, duration=${resultMsg.duration_ms}, result=${resultMsg.result ? JSON.stringify(resultMsg.result.slice(0, 300)) : 'null'}`)
@@ -1149,23 +1189,32 @@ export class ClaudeAgentManager {
 
       session.metadata.totalCost = resultMsg.total_cost_usd ?? session.metadata.totalCost
       session.metadata.durationMs += resultMsg.duration_ms || 0
+      session.metadata.lastQueryCalls = resultMsg.num_turns || 0
       session.metadata.numTurns += resultMsg.num_turns || 0
 
       if (resultMsg.modelUsage) {
         let totalInput = 0
         let totalOutput = 0
-        let totalCacheRead = 0
-        let totalCacheCreate = 0
+        // Track primary model's cache stats separately (sub-agent tokens pollute cache efficiency)
+        const primaryModel = session.metadata.model || ''
+        let primaryCacheRead = 0
+        let primaryCacheCreate = 0
+        let primaryInput = 0
         for (const [model, modelStats] of Object.entries(resultMsg.modelUsage)) {
           const stats = modelStats as { inputTokens?: number; outputTokens?: number; cacheReadInputTokens?: number; cacheCreationInputTokens?: number; contextWindow?: number }
           const cacheRead = stats.cacheReadInputTokens || 0
           const cacheCreate = stats.cacheCreationInputTokens || 0
+          const input = (stats.inputTokens || 0) + cacheRead + cacheCreate
           const line = `[Claude ctx] modelUsage[${model}]: input=${stats.inputTokens}, output=${stats.outputTokens}, cacheRead=${cacheRead}, cacheCreate=${cacheCreate}, contextWindow=${stats.contextWindow}`
           logger.log(line)
-          totalInput += (stats.inputTokens || 0) + cacheRead + cacheCreate
+          totalInput += input
           totalOutput += stats.outputTokens || 0
-          totalCacheRead += cacheRead
-          totalCacheCreate += cacheCreate
+          // Match primary model: exact match or prefix match (e.g. "claude-opus-4-6" matches "claude-opus-4-6-20250414")
+          if (model === primaryModel || model.startsWith(primaryModel.replace(/\[.*\]$/, ''))) {
+            primaryCacheRead = cacheRead
+            primaryCacheCreate = cacheCreate
+            primaryInput = input
+          }
           if (stats.contextWindow) {
             session.metadata.contextWindow = stats.contextWindow
           }
@@ -1173,12 +1222,30 @@ export class ClaudeAgentManager {
             session.metadata.maxOutputTokens = (modelStats as { maxOutputTokens?: number }).maxOutputTokens!
           }
         }
-        const summary = `[Claude ctx] prev: input=${session.metadata.inputTokens}, output=${session.metadata.outputTokens} | new: input=${totalInput}, output=${totalOutput} | cost=${resultMsg.total_cost_usd}`
+        const summary = `[Claude ctx] prev: input=${session.metadata.inputTokens}, output=${session.metadata.outputTokens} | new: total=${totalInput}, primary=${primaryInput} (${primaryModel}), output=${totalOutput} | cost=${resultMsg.total_cost_usd}`
         logger.log(summary)
-        session.metadata.inputTokens = totalInput
+        session.metadata.inputTokens = primaryInput || totalInput
         session.metadata.outputTokens = totalOutput
-        session.metadata.cacheReadTokens = totalCacheRead
-        session.metadata.cacheCreationTokens = totalCacheCreate
+        session.metadata.cacheReadTokens = primaryInput ? primaryCacheRead : 0
+        session.metadata.cacheCreationTokens = primaryInput ? primaryCacheCreate : 0
+        // Per-model usage for cost breakdown
+        const mu: SessionMetadata['modelUsage'] = {}
+        for (const [model, stats] of Object.entries(resultMsg.modelUsage)) {
+          const s = stats as { inputTokens?: number; outputTokens?: number; cacheReadInputTokens?: number; cacheCreationInputTokens?: number; costUSD?: number }
+          mu[model] = {
+            inputTokens: s.inputTokens || 0,
+            outputTokens: s.outputTokens || 0,
+            cacheReadInputTokens: s.cacheReadInputTokens || 0,
+            cacheCreationInputTokens: s.cacheCreationInputTokens || 0,
+            costUSD: s.costUSD || 0,
+          }
+        }
+        session.metadata.modelUsage = mu
+        // Ephemeral cache write breakdown (aggregate)
+        if (resultMsg.usage?.cache_creation) {
+          session.metadata.cacheWrite5mTokens = resultMsg.usage.cache_creation.ephemeral_5m_input_tokens ?? 0
+          session.metadata.cacheWrite1hTokens = resultMsg.usage.cache_creation.ephemeral_1h_input_tokens ?? 0
+        }
       } else if (resultMsg.usage) {
         const usageFull = resultMsg.usage as { input_tokens?: number; output_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number }
         const cacheRead = usageFull.cache_read_input_tokens || 0
@@ -1192,8 +1259,11 @@ export class ClaudeAgentManager {
         session.metadata.cacheCreationTokens = cacheCreate
       }
 
-      if (resultMsg.usage?.input_tokens) {
-        session.metadata.contextTokens = resultMsg.usage.input_tokens
+      // contextTokens is set from streaming events (the latest API call's input = actual context size).
+      // Only fall back to result usage if streaming didn't set it.
+      if (!session.metadata.contextTokens && resultMsg.usage?.input_tokens) {
+        const u = resultMsg.usage as { input_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number }
+        session.metadata.contextTokens = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0)
       }
 
       this.send('claude:status', sessionId, { ...session.metadata })
@@ -1211,6 +1281,13 @@ export class ClaudeAgentManager {
           isDeferred: true,
           timestamp: Date.now(),
         })
+      }
+
+      // Cache context usage once while process is still alive (for click after query ends)
+      if (session.queryInstance) {
+        session.queryInstance.getContextUsage().then(u => {
+          if (u) session.cachedContextUsage = u
+        }).catch(() => {})
       }
 
       this.send('claude:result', sessionId, {
@@ -1328,11 +1405,12 @@ export class ClaudeAgentManager {
           canUseTool,
           ...(claudeCodePath ? { pathToClaudeCodeExecutable: claudeCodePath } : {}),
           ...(nodeExecutable !== 'node' || electronFallback ? { executable: nodeExecutable } : {}),
+          ...(session.autoCompactWindow ? { autoCompactWindow: session.autoCompactWindow } : {}),
         }
 
         // Only resume if the sdkSessionId was created by a V2 session
         const v2ResumeId = session.v2SessionModel ? session.sdkSessionId : undefined
-        logger.log(`[Claude V2] Creating session: model=${v2Options.model}, permissionMode=${v2Options.permissionMode}, cwd=${session.cwd}, resumeId=${v2ResumeId || 'none'}`)
+        logger.log(`[Claude V2] Creating session: model=${v2Options.model}, permissionMode=${v2Options.permissionMode}, cwd=${session.cwd}, resumeId=${v2ResumeId || 'none'}, autoCompactWindow=${session.autoCompactWindow || 'none'}`)
 
         // WORKAROUND: V2 SDK's SDKSessionOptions does not support a `cwd` parameter.
         // The subprocess inherits process.cwd() which in Electron defaults to "/".
@@ -1577,13 +1655,17 @@ export class ClaudeAgentManager {
     }
   }
 
-  async setModel(sessionId: string, model: string): Promise<boolean> {
+  async setModel(sessionId: string, model: string, autoCompactWindow?: number): Promise<boolean> {
     const session = this.sessions.get(sessionId)
     if (!session || !model) return false
 
     // Persist the full model value (including [1m] suffix) — SDK handles it natively
     session.model = model
     session.metadata.model = model
+
+    // Update autoCompactWindow from latest settings
+    session.autoCompactWindow = autoCompactWindow
+    logger.log(`[setModel] autoCompactWindow=${autoCompactWindow || 'none'}`)
 
     if (session.apiVersion === 'v2') {
       // V2: model change takes effect on next send (session will be recreated in runQueryV2)
@@ -1677,13 +1759,21 @@ export class ClaudeAgentManager {
     mcpTools?: { name: string; serverName: string; tokens: number; isLoaded?: boolean }[]
   } | null> {
     const session = this.sessions.get(sessionId)
-    if (!session?.queryInstance) return null
-    try {
-      return await session.queryInstance.getContextUsage()
-    } catch (e) {
-      logger.warn('getContextUsage failed:', e)
-      return null
+    if (!session) return null
+    // Try live query first
+    if (session.queryInstance) {
+      try {
+        const usage = await session.queryInstance.getContextUsage()
+        if (usage) {
+          session.cachedContextUsage = usage
+          return usage
+        }
+      } catch {
+        // ProcessTransport not ready — fall through to cache
+      }
     }
+    // Return cached result from last successful live call
+    return (session.cachedContextUsage ?? null) as Awaited<ReturnType<typeof this.getContextUsage>>
   }
 
   getSessionMeta(sessionId: string): Record<string, unknown> | null {

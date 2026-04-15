@@ -380,6 +380,17 @@
   color: var(--text-primary);
 }
 
+.settings-btn.settings-btn-danger {
+  width: auto;
+  border-color: #a03030;
+  color: #e06060;
+}
+
+.settings-btn.settings-btn-danger:hover {
+  background: rgba(224, 96, 96, 0.12);
+  color: #ff7070;
+}
+
 .sidebar-footer-buttons {
   display: flex;
   gap: 8px;

@@ -59,6 +59,7 @@ export interface TerminalInstance {
   };
   worktreePath?: string;          // Path to the worktree if running in worktree isolation
   worktreeBranch?: string;        // Branch name in the worktree
+  historyKey?: string;            // Stable key for per-terminal HISTFILE (persisted across restarts)
 }
 
 export interface AppState {
@@ -76,6 +77,8 @@ export interface CreatePtyOptions {
   agentPreset?: AgentPresetId;   // 可選的 Agent 預設
   shell?: string;
   customEnv?: Record<string, string>;  // 自定義環境變數
+  perTerminalHistory?: boolean;  // Use per-terminal HISTFILE
+  historyKey?: string;           // Stable key for HISTFILE filename
 }
 
 export interface PtyOutput {
@@ -222,6 +225,9 @@ export interface AppSettings {
   notifyOnlyBackground?: boolean;      // 僅在視窗不在前景時通知
   statuslineItems?: StatuslineItemConfig[];  // 自訂 statusline 項目排序和顯示
   collapseToolOutputs?: boolean;  // 預設折疊所有工具輸出（預設 false = 展開）
+  autoCompactWindow?: number;     // Auto-compact context window size (token count)
+  perTerminalHistory?: boolean;   // Per-terminal shell history (separate HISTFILE per terminal)
+  accountSwitching?: boolean;     // Claude account quick-switch (default: true)
 }
 
 // ============================================

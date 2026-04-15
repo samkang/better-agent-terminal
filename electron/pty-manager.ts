@@ -1,8 +1,40 @@
-import { BrowserWindow } from 'electron'
+import { BrowserWindow, app } from 'electron'
 import { spawn, ChildProcess } from 'child_process'
+import * as path from 'path'
+import * as fs from 'fs'
+import * as crypto from 'crypto'
 import type { CreatePtyOptions } from '../src/types'
 import { broadcastHub } from './remote/broadcast-hub'
 import { logger } from './logger'
+
+// Per-terminal shell history directory
+const historyDir = path.join(app.getPath('userData'), 'terminal-history')
+const zshWrapperDir = path.join(historyDir, '.zsh-wrapper')
+
+// Create zsh wrapper rc files that source user's originals then override HISTFILE.
+// Uses env vars $_BAT_ZDOTDIR (original ZDOTDIR) and $_BAT_HISTFILE (target history file).
+let zshWrapperReady = false
+function ensureZshWrapper() {
+  if (zshWrapperReady) return
+  try {
+    fs.mkdirSync(zshWrapperDir, { recursive: true })
+    const src = (file: string) => `[ -f "\${_BAT_ZDOTDIR:-$HOME}/${file}" ] && source "\${_BAT_ZDOTDIR:-$HOME}/${file}"\n`
+    fs.writeFileSync(path.join(zshWrapperDir, '.zshenv'), src('.zshenv'))
+    fs.writeFileSync(path.join(zshWrapperDir, '.zprofile'), src('.zprofile'))
+    fs.writeFileSync(path.join(zshWrapperDir, '.zshrc'), [
+      src('.zshrc').trimEnd(),
+      'export HISTFILE="$_BAT_HISTFILE"',
+      'setopt INC_APPEND_HISTORY',
+      'ZDOTDIR="${_BAT_ZDOTDIR:-$HOME}"',
+      ''
+    ].join('\n'))
+    fs.writeFileSync(path.join(zshWrapperDir, '.zlogin'), src('.zlogin'))
+    zshWrapperReady = true
+    logger.log('[pty] zsh wrapper files created at', zshWrapperDir)
+  } catch (e) {
+    logger.warn('[pty] Failed to create zsh wrapper:', e)
+  }
+}
 
 // Try to import @lydell/node-pty, fall back to child_process if not available
 let pty: typeof import('@lydell/node-pty') | null = null
@@ -79,10 +111,37 @@ export class PtyManager {
   }
 
   create(options: CreatePtyOptions): boolean {
-    const { id, cwd, type, shell: shellOverride, customEnv = {} } = options
+    const { id, cwd, type, shell: shellOverride, customEnv = {}, perTerminalHistory, historyKey } = options
 
     const shell = shellOverride || this.getDefaultShell()
     let args: string[] = []
+
+    // Per-terminal HISTFILE: isolate shell history from system ~/.zsh_history
+    // Uses cwd-based key so history persists across tab close/reopen in the same project.
+    let histEnv: Record<string, string> = {}
+    if (perTerminalHistory) {
+      try {
+        fs.mkdirSync(historyDir, { recursive: true })
+        const key = historyKey || crypto.createHash('md5').update(id).digest('hex').slice(0, 12)
+        const histFile = path.join(historyDir, `${key}_history`)
+
+        if (shell.includes('zsh')) {
+          ensureZshWrapper()
+          histEnv = {
+            ZDOTDIR: zshWrapperDir,
+            _BAT_ZDOTDIR: process.env.ZDOTDIR || process.env.HOME || '',
+            _BAT_HISTFILE: histFile,
+            HISTFILE: histFile,
+          }
+          logger.log(`[pty] Per-terminal history (zsh wrapper): ${histFile}`)
+        } else {
+          histEnv = { HISTFILE: histFile }
+          logger.log(`[pty] Per-terminal history: ${histFile}`)
+        }
+      } catch (e) {
+        logger.warn('[pty] Failed to setup history:', e)
+      }
+    }
 
     // For PowerShell (pwsh or powershell), bypass execution policy to allow unsigned scripts
     if (shell.includes('powershell') || shell.includes('pwsh')) {
@@ -103,6 +162,7 @@ export class PtyManager {
         const envWithUtf8 = {
           ...process.env,
           ...customEnv,  // Merge custom environment variables
+          ...histEnv,    // Per-terminal HISTFILE (if enabled)
           // UTF-8 encoding
           LANG: 'en_US.UTF-8',
           LC_ALL: 'en_US.UTF-8',
@@ -162,6 +222,7 @@ export class PtyManager {
         const envWithUtf8 = {
           ...process.env,
           ...customEnv,  // Merge custom environment variables
+          ...histEnv,    // Per-terminal HISTFILE (if enabled)
           // UTF-8 encoding
           LANG: 'en_US.UTF-8',
           LC_ALL: 'en_US.UTF-8',

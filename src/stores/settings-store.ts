@@ -205,6 +205,28 @@ class SettingsStore {
     this.save()
   }
 
+  setAutoCompactWindow(value: number | undefined): void {
+    this.settings = { ...this.settings, autoCompactWindow: value ? Math.max(200000, value) : undefined }
+    this.notify()
+    this.save()
+  }
+
+  setPerTerminalHistory(value: boolean): void {
+    this.settings = { ...this.settings, perTerminalHistory: value || undefined }
+    this.notify()
+    this.save()
+  }
+
+  setAccountSwitching(enabled: boolean): void {
+    this.settings = { ...this.settings, accountSwitching: enabled }
+    this.notify()
+    this.save()
+  }
+
+  isAccountSwitchingEnabled(): boolean {
+    return this.settings.accountSwitching !== false
+  }
+
   setShowDockBadge(show: boolean): void {
     this.settings = { ...this.settings, showDockBadge: show }
     this.notify()
@@ -268,7 +290,7 @@ class SettingsStore {
       return stripDynamicColors([...this.settings.statuslineItems, ...missing])
     }
     // Default template
-    return stripDynamicColors(parseStatuslineTemplate('gitBranch(#61afef),sessionId(#d19a66) > tokens,turns,duration > contextPct,cost > usage5h,usage5hReset > usage7d(#e5c07b),usage7dReset(#e5c07b) > prompts(#d19a66)'))
+    return stripDynamicColors(parseStatuslineTemplate('gitBranch(#61afef),sessionId(#d19a66) > tokens,turns,duration > contextPct,cacheEff,cost > usage5h,usage5hReset > usage7d(#e5c07b),usage7dReset(#e5c07b) > prompts(#d19a66)'))
   }
 
   setStatuslineItems(items: StatuslineItemConfig[]): void {

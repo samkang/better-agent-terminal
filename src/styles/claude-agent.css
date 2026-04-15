@@ -803,6 +803,10 @@
   font-family: inherit;
 }
 
+.claude-plan-modal-markdown {
+  white-space: normal;
+}
+
 /* Diff View (Edit/Write tools) */
 .claude-diff-block {
   background: var(--bg-secondary);
@@ -1015,6 +1019,73 @@
 }
 
 /* Worktree action bar */
+/* Plan file bar */
+.claude-plan-file-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 12px;
+  padding: 6px 10px;
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 6px 6px 0 0;
+  border-bottom: none;
+  font-size: 12px;
+}
+
+.claude-plan-file-bar + .claude-worktree-bar {
+  border-radius: 0;
+  border-top: none;
+}
+
+.claude-plan-file-label {
+  color: #3b82f6;
+  font-weight: 500;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.claude-plan-file-label > span:first-child {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.claude-plan-file-subtitle {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.8;
+}
+
+.claude-plan-file-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.claude-plan-file-btn {
+  padding: 2px 8px;
+  font-size: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.claude-plan-file-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-primary);
+}
+
 .claude-worktree-bar {
   display: flex;
   align-items: center;

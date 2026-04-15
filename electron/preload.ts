@@ -48,7 +48,8 @@ const electronAPI = {
   settings: {
     save: (data: string) => ipcRenderer.invoke('settings:save', data),
     load: () => ipcRenderer.invoke('settings:load'),
-    getShellPath: (shell: string) => ipcRenderer.invoke('settings:get-shell-path', shell)
+    getShellPath: (shell: string) => ipcRenderer.invoke('settings:get-shell-path', shell),
+    clearTerminalHistory: () => ipcRenderer.invoke('settings:clear-terminal-history')
   },
   dialog: {
     selectFolder: () => ipcRenderer.invoke('dialog:select-folder') as Promise<string[] | null>,
@@ -81,7 +82,7 @@ const electronAPI = {
     writeImage: (filePath: string) => ipcRenderer.invoke('clipboard:writeImage', filePath),
   },
   claude: {
-    startSession: (sessionId: string, options: { cwd: string; prompt?: string; permissionMode?: string; model?: string; effort?: string; apiVersion?: 'v1' | 'v2'; useWorktree?: boolean; worktreePath?: string; worktreeBranch?: string }) =>
+    startSession: (sessionId: string, options: { cwd: string; prompt?: string; permissionMode?: string; model?: string; effort?: string; apiVersion?: 'v1' | 'v2'; useWorktree?: boolean; worktreePath?: string; worktreeBranch?: string; autoCompactWindow?: number; agentPreset?: string; codexSandboxMode?: string; codexApprovalPolicy?: string }) =>
       ipcRenderer.invoke('claude:start-session', sessionId, options),
     sendMessage: (sessionId: string, prompt: string, images?: string[]) =>
       ipcRenderer.invoke('claude:send-message', sessionId, prompt, images),
@@ -131,8 +132,8 @@ const electronAPI = {
     },
     setPermissionMode: (sessionId: string, mode: string) =>
       ipcRenderer.invoke('claude:set-permission-mode', sessionId, mode),
-    setModel: (sessionId: string, model: string) =>
-      ipcRenderer.invoke('claude:set-model', sessionId, model),
+    setModel: (sessionId: string, model: string, autoCompactWindow?: number) =>
+      ipcRenderer.invoke('claude:set-model', sessionId, model, autoCompactWindow),
     setEffort: (sessionId: string, effort: string) =>
       ipcRenderer.invoke('claude:set-effort', sessionId, effort),
     resetSession: (sessionId: string) =>
@@ -162,6 +163,7 @@ const electronAPI = {
         model: string
         memoryFiles?: { path: string; type: string; tokens: number }[]
         mcpTools?: { name: string; serverName: string; tokens: number; isLoaded?: boolean }[]
+        apiUsage?: { input_tokens: number; output_tokens: number; cache_creation_input_tokens: number; cache_read_input_tokens: number } | null
       } | null>,
     getCliPath: () =>
       ipcRenderer.invoke('claude:get-cli-path') as Promise<string>,
@@ -171,6 +173,18 @@ const electronAPI = {
       ipcRenderer.invoke('claude:auth-status') as Promise<{ loggedIn: boolean; email?: string; subscriptionType?: string; authMethod?: string } | null>,
     authLogout: () =>
       ipcRenderer.invoke('claude:auth-logout') as Promise<{ success: boolean; error?: string }>,
+    accountList: () =>
+      ipcRenderer.invoke('claude:account-list') as Promise<{ accounts: { id: string; email: string; subscriptionType?: string; isDefault: boolean; createdAt: number }[]; activeAccountId: string | null; switchWarningShown: boolean }>,
+    accountImportCurrent: () =>
+      ipcRenderer.invoke('claude:account-import-current') as Promise<{ id: string; email: string; subscriptionType?: string } | null>,
+    accountLoginNew: () =>
+      ipcRenderer.invoke('claude:account-login-new') as Promise<{ success: boolean; account?: { id: string; email: string; subscriptionType?: string }; error?: string }>,
+    accountSwitch: (accountId: string) =>
+      ipcRenderer.invoke('claude:account-switch', accountId) as Promise<boolean>,
+    accountRemove: (accountId: string) =>
+      ipcRenderer.invoke('claude:account-remove', accountId) as Promise<boolean>,
+    accountMarkWarningShown: () =>
+      ipcRenderer.invoke('claude:account-mark-warning-shown') as Promise<boolean>,
     resolvePermission: (sessionId: string, toolUseId: string, result: { behavior: string; updatedInput?: Record<string, unknown>; updatedPermissions?: unknown[]; message?: string; dontAskAgain?: boolean }) =>
       ipcRenderer.invoke('claude:resolve-permission', sessionId, toolUseId, result),
     resolveAskUser: (sessionId: string, toolUseId: string, answers: Record<string, string>) =>

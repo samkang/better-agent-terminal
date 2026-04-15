@@ -3,18 +3,15 @@ import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import type { TerminalInstance } from '../types'
 import { TerminalThumbnail } from './TerminalThumbnail'
-import { getAgentPreset } from '../types/agent-presets'
+import { getAgentPreset, type AgentPreset } from '../types/agent-presets'
 
 interface ThumbnailBarProps {
   terminals: TerminalInstance[]
   focusedTerminalId: string | null
   onFocus: (id: string) => void
   onAddTerminal?: () => void
-  onAddClaudeAgent?: () => void
-  onAddClaudeAgentV2?: () => void
-  onAddClaudeWorktree?: () => void
-  onAddClaudeCli?: () => void
-  onAddClaudeCliWorktree?: () => void
+  onAddAgent?: (presetId: string) => void
+  agentPresets?: AgentPreset[]
   onReorder?: (orderedIds: string[]) => void
   showAddButton: boolean
   height?: number
@@ -27,11 +24,8 @@ export function ThumbnailBar({
   focusedTerminalId,
   onFocus,
   onAddTerminal,
-  onAddClaudeAgent,
-  onAddClaudeAgentV2,
-  onAddClaudeWorktree,
-  onAddClaudeCli,
-  onAddClaudeCliWorktree,
+  onAddAgent,
+  agentPresets = [],
   onReorder,
   showAddButton,
   height,
@@ -192,53 +186,17 @@ export function ThumbnailBar({
                     <span className="thumbnail-add-menu-icon">⌘</span>
                     {t('terminal.terminalLabel')}
                   </div>
-                  {onAddClaudeAgent && (
+                  {agentPresets.map(preset => (
                     <div
+                      key={preset.id}
                       className="thumbnail-add-menu-item"
-                      onClick={() => { onAddClaudeAgent(); setShowAddMenu(false) }}
+                      onClick={() => { onAddAgent?.(preset.id); setShowAddMenu(false) }}
                     >
-                      <span className="thumbnail-add-menu-icon" style={{ color: '#d97706' }}>✦</span>
-                      Claude Agent V1
-                      <span className="thumbnail-add-menu-suggested">suggested</span>
+                      <span className="thumbnail-add-menu-icon" style={{ color: preset.color }}>{preset.icon}</span>
+                      {preset.name}
+                      {preset.suggested && <span className="thumbnail-add-menu-suggested">suggested</span>}
                     </div>
-                  )}
-                  {onAddClaudeAgentV2 && (
-                    <div
-                      className="thumbnail-add-menu-item"
-                      onClick={() => { onAddClaudeAgentV2(); setShowAddMenu(false) }}
-                    >
-                      <span className="thumbnail-add-menu-icon" style={{ color: '#eab308' }}>✦</span>
-                      Claude Agent V2
-                    </div>
-                  )}
-                  {onAddClaudeWorktree && (
-                    <div
-                      className="thumbnail-add-menu-item"
-                      onClick={() => { onAddClaudeWorktree(); setShowAddMenu(false) }}
-                    >
-                      <span className="thumbnail-add-menu-icon" style={{ color: '#22c55e' }}>🌳</span>
-                      Claude Agent V1 (Worktree)
-                    </div>
-                  )}
-                  {onAddClaudeCli && (
-                    <div
-                      className="thumbnail-add-menu-item"
-                      onClick={() => { onAddClaudeCli(); setShowAddMenu(false) }}
-                    >
-                      <span className="thumbnail-add-menu-icon" style={{ color: '#d97706' }}>▶</span>
-                      Claude CLI
-                      <span className="thumbnail-add-menu-suggested">suggested</span>
-                    </div>
-                  )}
-                  {onAddClaudeCliWorktree && (
-                    <div
-                      className="thumbnail-add-menu-item"
-                      onClick={() => { onAddClaudeCliWorktree(); setShowAddMenu(false) }}
-                    >
-                      <span className="thumbnail-add-menu-icon" style={{ color: '#22c55e' }}>▶🌳</span>
-                      Claude CLI (Worktree)
-                    </div>
-                  )}
+                  ))}
                 </div>,
                 document.body
               )}

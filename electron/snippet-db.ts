@@ -47,11 +47,14 @@ class SnippetDatabase {
         this.load()
     }
 
+    private lastMtime = 0
+
     private load() {
         try {
             if (fs.existsSync(this.dataPath)) {
                 const raw = fs.readFileSync(this.dataPath, 'utf-8')
                 this.data = JSON.parse(raw)
+                this.lastMtime = fs.statSync(this.dataPath).mtimeMs
                 // Migrate: backfill action field for old snippets
                 let migrated = false
                 for (const s of this.data.snippets) {
@@ -68,6 +71,14 @@ class SnippetDatabase {
         }
     }
 
+    private refreshIfChanged() {
+        try {
+            if (!fs.existsSync(this.dataPath)) return
+            const mtime = fs.statSync(this.dataPath).mtimeMs
+            if (mtime > this.lastMtime) this.load()
+        } catch { /* ignore */ }
+    }
+
     private save() {
         try {
             const dir = path.dirname(this.dataPath)
@@ -81,6 +92,7 @@ class SnippetDatabase {
     }
 
     create(input: CreateSnippetInput): Snippet {
+        this.refreshIfChanged()
         const now = Date.now()
         const snippet: Snippet = {
             id: this.data.nextId++,
@@ -101,26 +113,31 @@ class SnippetDatabase {
     }
 
     getById(id: number): Snippet | null {
+        this.refreshIfChanged()
         return this.data.snippets.find(s => s.id === id) || null
     }
 
     getAll(): Snippet[] {
+        this.refreshIfChanged()
         return [...this.data.snippets].sort((a, b) => b.updatedAt - a.updatedAt)
     }
 
     getFavorites(): Snippet[] {
+        this.refreshIfChanged()
         return this.data.snippets
             .filter(s => s.isFavorite)
             .sort((a, b) => b.updatedAt - a.updatedAt)
     }
 
     getByCategory(category: string): Snippet[] {
+        this.refreshIfChanged()
         return this.data.snippets
             .filter(s => s.category === category)
             .sort((a, b) => b.updatedAt - a.updatedAt)
     }
 
     search(query: string): Snippet[] {
+        this.refreshIfChanged()
         const term = query.toLowerCase()
         return this.data.snippets
             .filter(s =>
@@ -132,6 +149,7 @@ class SnippetDatabase {
     }
 
     update(id: number, updates: Partial<CreateSnippetInput>): Snippet | null {
+        this.refreshIfChanged()
         const index = this.data.snippets.findIndex(s => s.id === id)
         if (index === -1) return null
 
@@ -154,6 +172,7 @@ class SnippetDatabase {
     }
 
     delete(id: number): boolean {
+        this.refreshIfChanged()
         const index = this.data.snippets.findIndex(s => s.id === id)
         if (index === -1) return false
         this.data.snippets.splice(index, 1)
@@ -168,12 +187,14 @@ class SnippetDatabase {
     }
 
     getByWorkspace(workspaceId?: string): Snippet[] {
+        this.refreshIfChanged()
         return this.data.snippets
             .filter(s => !s.workspaceId || s.workspaceId === workspaceId)
             .sort((a, b) => b.updatedAt - a.updatedAt)
     }
 
     getCategories(): string[] {
+        this.refreshIfChanged()
         const categories = new Set<string>()
         for (const s of this.data.snippets) {
             if (s.category) categories.add(s.category)

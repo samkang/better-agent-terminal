@@ -24,22 +24,8 @@
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.104",
     "@anthropic-ai/claude-code": "^2.1.104",
-    "@types/dompurify": "^3.0.5",
-    "@types/qrcode": "^1.5.6",
-    "@xterm/addon-fit": "^0.10.0",
-    "@xterm/addon-unicode11": "^0.8.0",
-    "@xterm/addon-web-links": "^0.11.0",
-    "@xterm/xterm": "^5.5.0",
+    "@openai/codex-sdk": "^0.120.0",
     "better-sqlite3": "^12.5.0",
-    "dompurify": "^3.3.3",
-    "highlight.js": "^11.11.1",
-    "i18next": "^25.8.18",
-    "marked": "^17.0.5",
-    "mermaid": "^11.13.0",
-    "qrcode": "^1.5.4",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "react-i18next": "^16.5.8",
     "uuid": "^9.0.0",
     "ws": "^8.19.0"
   },
@@ -52,17 +38,32 @@
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
+    "@types/dompurify": "^3.0.5",
     "@types/node": "^20.0.0",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "@types/uuid": "^9.0.0",
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^4.2.0",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/addon-unicode11": "^0.8.0",
+    "@xterm/addon-web-links": "^0.11.0",
+    "@xterm/xterm": "^5.5.0",
     "concurrently": "^8.2.0",
     "cross-env": "^10.1.0",
+    "dompurify": "^3.3.3",
     "electron": "^28.3.3",
     "electron-builder": "^24.0.0",
+    "highlight.js": "^11.11.1",
+    "i18next": "^25.8.18",
+    "marked": "^17.0.5",
+    "mermaid": "^11.13.0",
     "png-to-ico": "^3.0.1",
+    "qrcode": "^1.5.4",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-i18next": "^16.5.8",
     "sharp": "^0.34.5",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.0",
@@ -98,10 +99,12 @@
       "installerHeaderIcon": "assets/icon.ico"
     },
     "mac": {
-      "target": {
-        "target": "dmg",
-        "arch": "universal"
-      },
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["arm64", "universal"]
+        }
+      ],
       "icon": "assets/icon-512.png",
       "category": "public.app-category.developer-tools",
       "identity": "TonyQ CO., LTD. (8JVDJGLLYR)",
@@ -116,7 +119,18 @@
         "NSDocumentsFolderUsageDescription": "BetterAgentTerminal needs access to your Documents folder to open terminals and manage files in your projects.",
         "NSDesktopFolderUsageDescription": "BetterAgentTerminal needs access to your Desktop folder to open terminals and manage files in your projects.",
         "NSDownloadsFolderUsageDescription": "BetterAgentTerminal needs access to your Downloads folder to open terminals and manage files in your projects."
-      }
+      },
+      "files": [
+        "!node_modules/@anthropic-ai/**/vendor/ripgrep/x64-linux/**",
+        "!node_modules/@anthropic-ai/**/vendor/ripgrep/arm64-linux/**",
+        "!node_modules/@anthropic-ai/**/vendor/ripgrep/x64-win32/**",
+        "!node_modules/@anthropic-ai/**/vendor/ripgrep/arm64-win32/**",
+        "!node_modules/@anthropic-ai/**/vendor/audio-capture/x64-linux/**",
+        "!node_modules/@anthropic-ai/**/vendor/audio-capture/arm64-linux/**",
+        "!node_modules/@anthropic-ai/**/vendor/audio-capture/x64-win32/**",
+        "!node_modules/@anthropic-ai/**/vendor/audio-capture/arm64-win32/**",
+        "!node_modules/@anthropic-ai/**/vendor/seccomp/**"
+      ]
     },
     "linux": {
       "target": "AppImage",
@@ -128,13 +142,19 @@
       "dist/**/*",
       "dist-electron/**/*",
       "node_modules/**/*",
+      "!node_modules/@openai/codex/**",
+      "!node_modules/@openai/codex-*-*/**",
+      "!node_modules/better-sqlite3/deps/**",
+      "!node_modules/better-sqlite3/src/**",
+      "!node_modules/better-sqlite3/build/Release/obj/**",
       "assets/icon.ico",
       "assets/icon.png",
       "assets/icon-512.png"
     ],
     "asarUnpack": [
-      "node_modules/@anthropic-ai/claude-code/**/*",
-      "node_modules/@anthropic-ai/claude-agent-sdk/**/*",
+      "node_modules/@anthropic-ai/*/cli.js",
+      "node_modules/@anthropic-ai/*/vendor/**/*",
+      "node_modules/@anthropic-ai/**/*.wasm",
       "node_modules/@img/**/*"
     ]
   }

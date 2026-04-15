@@ -102,7 +102,9 @@ export default function App() {
     }
     fetchAuth()
     const interval = setInterval(fetchAuth, 120_000)
-    return () => clearInterval(interval)
+    const onAccountSwitch = () => fetchAuth()
+    window.addEventListener('claude-account-switched', onAccountSwitch)
+    return () => { clearInterval(interval); window.removeEventListener('claude-account-switched', onAccountSwitch) }
   }, [])
   useEffect(() => {
     const authSuffix = authInfo?.email ? ` ( ${authInfo.email} / ${authInfo.subscriptionType || 'unknown'} )` : ''

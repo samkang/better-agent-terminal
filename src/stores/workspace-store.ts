@@ -227,7 +227,8 @@ class WorkspaceStore {
       title,
       cwd: workspace.folderPath,
       scrollbackBuffer: [],
-      lastActivityTime: Date.now()
+      lastActivityTime: Date.now(),
+      historyKey: uuidv4().replace(/-/g, '').slice(0, 12),
     }
 
     // Auto-focus if it's an agent terminal or no current focus
