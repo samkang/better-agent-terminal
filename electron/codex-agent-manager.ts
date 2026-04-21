@@ -65,13 +65,13 @@ const CODEX_EFFORT_LEVELS: readonly CodexEffortLevel[] = ['minimal', 'low', 'med
 let CodexClass: unknown = null
 
 function getCodexInstallHint(): string {
-  if (process.platform === 'win32') {
-    return 'npm i -g @openai/codex'
-  }
   if (process.platform === 'darwin') {
-    return 'npm i -g @openai/codex or brew install --cask codex'
+    return 'brew install codex'
   }
-  return 'npm i -g @openai/codex'
+  if (process.platform === 'win32') {
+    return 'winget install OpenAI.Codex (or npm i -g @openai/codex)'
+  }
+  return 'brew install codex (see https://github.com/openai/codex for other install options)'
 }
 
 async function getCodexClass(): Promise<unknown> {

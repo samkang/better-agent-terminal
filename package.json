@@ -159,13 +159,15 @@
       "!node_modules/better-sqlite3/build/Release/obj/**",
       "!node_modules/@anthropic-ai/claude-code-*/**",
       "!node_modules/@anthropic-ai/claude-agent-sdk-*/**",
+      "!node_modules/@openai/codex-darwin-*/**",
+      "!node_modules/@openai/codex-linux-*/**",
+      "!node_modules/@openai/codex-win32-*/**",
       "assets/icon.ico",
       "assets/icon.png",
       "assets/icon-512.png"
     ],
     "asarUnpack": [
       "bin/**",
-      "node_modules/@openai/codex-*/vendor/**/*",
       "node_modules/@anthropic-ai/claude-code/bin/**",
       "node_modules/@anthropic-ai/*/vendor/**/*",
       "node_modules/@anthropic-ai/**/*.wasm",
