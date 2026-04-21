@@ -155,6 +155,37 @@ Items can be reordered, colored, and toggled on/off via a drag-and-drop template
 | `/login` | Sign in to Claude (switch account) |
 | `/logout` | Sign out of Claude |
 | `/whoami` | Show current account info and usage |
+| `/auto-continue` / `/ac` | Auto-resend a prompt when the agent stops — see [Auto-Continue](#auto-continue) |
+
+### Auto-Continue
+
+Some tasks are too long to finish in a single turn — the agent stops mid-plan, or pauses waiting for the user to say "keep going". `/auto-continue` (alias `/ac`) tells the host to re-send a prompt automatically when the turn ends, up to N times.
+
+**Syntax** (typed into the agent input box):
+
+```
+/auto-continue                  # enable, max 3, prompt="繼續"
+/auto-continue 5                # enable, max 5, prompt="繼續"
+/auto-continue 繼續做完         # enable, max 3, custom prompt
+/auto-continue 10 keep going    # enable, max 10, custom prompt
+/ac 5                           # short alias
+/auto-continue off              # disable (also: /ac stop)
+```
+
+**Behavior**
+
+- State lives on the **host** (per-session), so remote clients and other views see the same counter.
+- The counter resets to `0` every time you manually send a new message — your own input always restarts the budget.
+- Triggers only when the previous turn ended with `subtype=success`; errors, abort, max-turns, or rate-limit halts stop auto-continue.
+- Skipped if the session is streaming, aborted, or has queued messages.
+- Each auto-sent turn shows `<prompt>  [auto N/max]` in the message list so you can tell the agent didn't type that.
+- `/abort` and manual session stop clear the auto-continue state.
+
+**Tips**
+
+- Use a concrete prompt like `/auto-continue 5 請依照 plan 的 step 繼續，做完一步就停下` instead of just `繼續` — the agent behaves more predictably.
+- Set a low `max` (3–5) the first time you try it on a new task, then raise it once you trust the loop.
+- Turn it off with `/ac off` before a long lunch break — auto-continue will happily burn credits while you're away.
 
 ---
 
