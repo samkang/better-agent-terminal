@@ -99,18 +99,22 @@ function linuxArchCandidates(): string[] {
 }
 
 // Resolve the Claude Code CLI binary path. Since claude-code v2.1.113 the
-// package ships a native binary at bin/claude[.exe] (placed by postinstall
-// from a per-platform optionalDependency) instead of the old bundled cli.js.
+// package ships a native binary placed by postinstall from a per-platform
+// optionalDependency. install.cjs writes it to bin/claude.exe on EVERY
+// platform — the .exe suffix is literal (just a filename on Unix). The
+// platform packages still hold the unsuffixed name on Unix, so search the
+// main package by `claude.exe` first, then fall back to the platform-pkg
+// filename for dev setups where the platform package is present.
 // In packaged Electron apps, asarUnpack puts files under app.asar.unpacked
 // but require.resolve returns the app.asar path — we rewrite to .unpacked.
 function resolveClaudeCodePath(): string {
-  const exe = process.platform === 'win32' ? 'claude.exe' : 'claude'
+  const platformPkgBin = process.platform === 'win32' ? 'claude.exe' : 'claude'
   const archKey = process.platform === 'linux'
     ? linuxArchCandidates()
     : [`${process.platform}-${process.arch}`]
   const candidates = [
-    `@anthropic-ai/claude-code/bin/${exe}`,
-    ...archKey.map(k => `@anthropic-ai/claude-code-${k}/${exe}`),
+    `@anthropic-ai/claude-code/bin/claude.exe`,
+    ...archKey.map(k => `@anthropic-ai/claude-code-${k}/${platformPkgBin}`),
   ]
   const req = (() => {
     try { return createRequire(import.meta.url ?? __filename) }
