@@ -10,6 +10,7 @@ import { workspaceStore } from '../stores/workspace-store'
 // Lazy load heavy components
 const ClaudeAgentPanel = lazy(() => import('./ClaudeAgentPanel').then(m => ({ default: m.ClaudeAgentPanel })))
 const CodexAgentPanel = lazy(() => import('./CodexAgentPanel').then(m => ({ default: m.CodexAgentPanel })))
+const OpenAIAgentPanel = lazy(() => import('./OpenAIAgentPanel').then(m => ({ default: m.OpenAIAgentPanel })))
 const WorkerPanel = lazy(() => import('./WorkerPanel').then(m => ({ default: m.WorkerPanel })))
 
 interface MainPanelProps {
@@ -24,8 +25,9 @@ interface MainPanelProps {
 export const MainPanel = memo(function MainPanel({ terminal, isActive, onClose, onRestart, onSwitchApiVersion, workspaceId }: Readonly<MainPanelProps>) {
   const isWorker = !!terminal.procfilePath
   const isAgent = terminal.agentPreset && terminal.agentPreset !== 'none'
-  const isSdkManaged = terminal.agentPreset === 'claude-code' || terminal.agentPreset === 'claude-code-v2' || terminal.agentPreset === 'claude-code-worktree' || terminal.agentPreset === 'codex-agent'
+  const isSdkManaged = terminal.agentPreset === 'claude-code' || terminal.agentPreset === 'claude-code-v2' || terminal.agentPreset === 'claude-code-worktree' || terminal.agentPreset === 'codex-agent' || terminal.agentPreset === 'openai-agent'
   const isCodexAgent = terminal.agentPreset === 'codex-agent'
+  const isOpenAIAgent = terminal.agentPreset === 'openai-agent'
   const isClaudeCode = isSdkManaged
   const agentConfig = isAgent ? getAgentPreset(terminal.agentPreset!) : null
   const displayTitle = terminal.alias || terminal.title
@@ -161,7 +163,19 @@ export const MainPanel = memo(function MainPanel({ terminal, isActive, onClose, 
           </Suspense>
         ) : isClaudeCode ? (
           <Suspense fallback={<div className="loading-panel" />}>
-            {isCodexAgent ? (
+            {isOpenAIAgent ? (
+              <OpenAIAgentPanel
+                sessionId={terminal.id}
+                cwd={terminal.cwd}
+                isActive={isActive}
+                workspaceId={workspaceId}
+                onClose={onClose}
+                showUserMsg={showUserMsg}
+                showAssistantMsg={showAssistantMsg}
+                showToolMsg={showToolMsg}
+                showThinkingMsg={showThinkingMsg}
+              />
+            ) : isCodexAgent ? (
               <CodexAgentPanel
                 sessionId={terminal.id}
                 cwd={terminal.cwd}

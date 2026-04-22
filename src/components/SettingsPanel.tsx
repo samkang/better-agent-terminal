@@ -57,6 +57,11 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [bindInterface, setBindInterface] = useState<BindInterface>('localhost')
   const [clientStatus, setClientStatus] = useState<RemoteClientStatus>({ connected: false, info: null })
 
+  // OpenAI API key state
+  const [openaiKeyStatus, setOpenaiKeyStatus] = useState<{ hasKey: boolean }>({ hasKey: false })
+  const [openaiKeyInput, setOpenaiKeyInput] = useState('')
+  const [openaiKeySaving, setOpenaiKeySaving] = useState(false)
+
   // QR code state
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
   const [qrInfo, setQrInfo] = useState<{ url: string; mode: string } | null>(null)
@@ -95,6 +100,10 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     return settingsStore.subscribe(() => {
       setSettings(settingsStore.getSettings())
     })
+  }, [])
+
+  useEffect(() => {
+    window.electronAPI.openai?.getApiKeyStatus().then(setOpenaiKeyStatus).catch(() => { /* ignore */ })
   }, [])
 
   // Check font availability on mount
@@ -570,6 +579,53 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                     </div>
                   </>
                 )}
+              </div>
+
+              <div className="settings-section">
+                <h3>OpenAI (Direct) API Key</h3>
+                <p className="settings-hint">Stored locally, encrypted with OS keychain via Electron safeStorage. Used by the "OpenAI (Direct)" agent preset.</p>
+                <div className="settings-group">
+                  <label>Status: {openaiKeyStatus.hasKey ? '✅ key configured' : '❌ no key'}</label>
+                  <input
+                    type="password"
+                    value={openaiKeyInput}
+                    onChange={e => setOpenaiKeyInput(e.target.value)}
+                    placeholder="sk-..."
+                    autoComplete="off"
+                  />
+                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                    <button
+                      className="settings-btn"
+                      disabled={!openaiKeyInput.trim() || openaiKeySaving}
+                      onClick={async () => {
+                        setOpenaiKeySaving(true)
+                        try {
+                          await window.electronAPI.openai.setApiKey(openaiKeyInput.trim())
+                          setOpenaiKeyInput('')
+                          const s = await window.electronAPI.openai.getApiKeyStatus()
+                          setOpenaiKeyStatus(s)
+                        } finally {
+                          setOpenaiKeySaving(false)
+                        }
+                      }}
+                    >
+                      {openaiKeySaving ? 'Saving…' : 'Save Key'}
+                    </button>
+                    {openaiKeyStatus.hasKey && (
+                      <button
+                        className="settings-btn settings-btn-danger"
+                        onClick={async () => {
+                          if (!confirm('Clear saved OpenAI API key?')) return
+                          await window.electronAPI.openai.clearApiKey()
+                          const s = await window.electronAPI.openai.getApiKeyStatus()
+                          setOpenaiKeyStatus(s)
+                        }}
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
 
               <div className="settings-section">

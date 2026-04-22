@@ -15,7 +15,7 @@ export interface AgentPreset {
   needsGitRepo?: boolean; // 需要 git repo（worktree 類）
 }
 
-export type AgentPresetId = 'claude-code' | 'claude-code-v2' | 'claude-code-worktree' | 'claude-cli' | 'claude-cli-worktree' | 'codex-agent' | 'codex-cli' | 'none';
+export type AgentPresetId = 'claude-code' | 'claude-code-v2' | 'claude-code-worktree' | 'claude-cli' | 'claude-cli-worktree' | 'codex-agent' | 'codex-cli' | 'openai-agent' | 'none';
 
 export const AGENT_PRESETS: AgentPreset[] = [
   {
@@ -63,6 +63,13 @@ export const AGENT_PRESETS: AgentPreset[] = [
     name: 'Codex Agent',
     icon: '⬡',
     color: '#10a37f',
+    backend: 'sdk',
+  },
+  {
+    id: 'openai-agent',
+    name: 'OpenAI (Direct)',
+    icon: '◯',
+    color: '#0ea5e9',
     backend: 'sdk',
   },
   {

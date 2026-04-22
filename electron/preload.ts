@@ -272,6 +272,18 @@ const electronAPI = {
       return () => ipcRenderer.removeListener('claude:prompt-suggestion', handler)
     },
   },
+  openai: {
+    getApiKeyStatus: () =>
+      ipcRenderer.invoke('openai:get-api-key-status') as Promise<{ hasKey: boolean }>,
+    setApiKey: (key: string) =>
+      ipcRenderer.invoke('openai:set-api-key', key) as Promise<boolean>,
+    clearApiKey: () =>
+      ipcRenderer.invoke('openai:clear-api-key') as Promise<boolean>,
+    listSessions: (cwd: string) =>
+      ipcRenderer.invoke('openai:list-sessions', cwd) as Promise<{ sdkSessionId: string; timestamp: number; preview: string; messageCount: number }[]>,
+    compactNow: (sessionId: string) =>
+      ipcRenderer.invoke('openai:compact-now', sessionId) as Promise<boolean>,
+  },
   worktree: {
     create: (sessionId: string, cwd: string) =>
       ipcRenderer.invoke('worktree:create', sessionId, cwd) as Promise<{ success: boolean; worktreePath?: string; branchName?: string; gitRoot?: string; sourceBranch?: string; error?: string }>,

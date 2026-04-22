@@ -56,6 +56,7 @@ if (process.platform === 'darwin') {
 import { PtyManager } from './pty-manager'
 import { ClaudeAgentManager } from './claude-agent-manager'
 import { CodexAgentManager } from './codex-agent-manager'
+import { OpenAIAgentManager } from './openai-agent-manager'
 import { checkForUpdates, UpdateCheckResult } from './update-checker'
 import { snippetDb } from './snippet-db'
 import { ProfileManager, type ProfileSnapshot } from './profile-manager'
@@ -165,7 +166,8 @@ const windowMap = new Map<string, BrowserWindow>() // windowId → BrowserWindow
 let ptyManager: PtyManager | null = null
 let claudeManager: ClaudeAgentManager | null = null
 let codexManager: CodexAgentManager | null = null
-const sessionManagerMap = new Map<string, 'claude' | 'codex'>()
+let openaiManager: OpenAIAgentManager | null = null
+const sessionManagerMap = new Map<string, 'claude' | 'codex' | 'openai'>()
 let updateCheckResult: UpdateCheckResult | null = null
 const profileManager = new ProfileManager()
 const remoteServer = new RemoteServer()
@@ -353,6 +355,7 @@ function createWindow(windowId: string, bounds?: { x: number; y: number; width: 
   if (!ptyManager) ptyManager = new PtyManager(getAllWindows)
   if (!claudeManager) claudeManager = new ClaudeAgentManager(getAllWindows)
   if (!codexManager) codexManager = new CodexAgentManager(getAllWindows)
+  if (!openaiManager) openaiManager = new OpenAIAgentManager(getAllWindows)
 
   const urlParam = `?windowId=${encodeURIComponent(windowId)}`
   if (VITE_DEV_SERVER_URL) {
@@ -497,12 +500,15 @@ function cleanupAllProcesses() {
   try { claudeManager?.dispose() } catch { /* ignore */ }
   try { codexManager?.killAll() } catch { /* ignore */ }
   try { codexManager?.dispose() } catch { /* ignore */ }
+  try { openaiManager?.killAll() } catch { /* ignore */ }
+  try { openaiManager?.dispose() } catch { /* ignore */ }
   try { ptyManager?.dispose() } catch { /* ignore */ }
   try { snippetDb.close() } catch { /* ignore */ }
   remoteClient = null
   remoteClientProfileId = null
   claudeManager = null
   codexManager = null
+  openaiManager = null
   sessionManagerMap.clear()
   ptyManager = null
 }
@@ -1360,6 +1366,7 @@ registerProxiedHandlers({
   getPtyManager: () => ptyManager,
   getClaudeManager: () => claudeManager,
   getCodexManager: () => codexManager,
+  getOpenAIManager: () => openaiManager,
   sessionManagerMap,
   windowRegistry,
   profileManager,
