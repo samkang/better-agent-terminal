@@ -502,8 +502,23 @@ export class OpenAIAgentManager {
       const { createOpenAI } = await getOpenAI()
       const { streamText, stepCountIs } = await getAI()
       const isCodexOAuth = getKeySource() === 'codex-oauth'
+      const debugFetch: typeof fetch = async (input, init) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+        const body = typeof init?.body === 'string' ? init.body : '(non-string body)'
+        logger.log(`${stag} → ${init?.method || 'POST'} ${url} body=${body.length > 4000 ? body.slice(0, 4000) + '…(truncated)' : body}`)
+        const res = await fetch(input, init)
+        if (!res.ok) {
+          const clone = res.clone()
+          const text = await clone.text().catch(() => '(unreadable)')
+          logger.error(`${stag} ← ${res.status} ${res.statusText} body=${text.length > 4000 ? text.slice(0, 4000) + '…(truncated)' : text}`)
+        } else {
+          logger.log(`${stag} ← ${res.status} ${res.statusText}`)
+        }
+        return res
+      }
       const provider = createOpenAI({
         apiKey,
+        fetch: debugFetch,
         ...(isCodexOAuth ? { baseURL: CODEX_CHATGPT_BASE_URL } : {}),
       })
       const languageModel = isCodexOAuth
