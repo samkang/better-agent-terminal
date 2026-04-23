@@ -142,10 +142,12 @@ function findCodexBinary(): string | undefined {
 }
 
 const CODEX_MODELS: Array<{ value: string; displayName: string; description: string }> = [
-  { value: 'o3', displayName: 'o3', description: 'OpenAI o3 · reasoning model' },
-  { value: 'o4-mini', displayName: 'o4-mini', description: 'OpenAI o4-mini · fast & efficient' },
-  { value: 'gpt-4.1', displayName: 'GPT-4.1', description: 'OpenAI GPT-4.1 · latest GPT' },
+  { value: 'gpt-5.3-codex', displayName: 'GPT-5.3 Codex', description: 'GPT-5.3 · codex variant' },
+  { value: 'gpt-5.3-codex-spark', displayName: 'GPT-5.3 Codex Spark', description: 'GPT-5.3 · lightweight codex' },
   { value: 'codex-mini-latest', displayName: 'Codex Mini', description: 'codex-mini · optimized for code' },
+  { value: 'o4-mini', displayName: 'o4-mini', description: 'OpenAI o4-mini · fast reasoning' },
+  { value: 'o3', displayName: 'o3', description: 'OpenAI o3 · reasoning model' },
+  { value: 'gpt-4.1', displayName: 'GPT-4.1', description: 'OpenAI GPT-4.1' },
 ]
 
 const sdkThreadIds = new Map<string, string>()

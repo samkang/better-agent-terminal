@@ -5,8 +5,8 @@ import { logger } from './logger'
 import { broadcastHub } from './remote/broadcast-hub'
 import { buildBuiltinTools } from './openai-tools/registry'
 import { TOOL_CONTEXT_KEY, type OpenAIPermissionMode, type OpenAIToolContext } from './openai-tools/context'
-import { loadOpenAIKey } from './openai-agent/api-key'
-import { DEFAULT_OPENAI_MODEL, findModel, OPENAI_MODELS } from './openai-agent/models'
+import { loadOpenAIKey, getKeySource } from './openai-agent/api-key'
+import { DEFAULT_OPENAI_MODEL, findModel, OPENAI_MODELS, CODEX_CHATGPT_SUPPORTED_MODELS } from './openai-agent/models'
 import { scanSkills, buildSkillsSystemPromptSection, type SkillMeta } from './openai-agent/skills-scanner'
 import {
   needsCompaction as compactionNeeded,
@@ -81,6 +81,8 @@ type ModelMessage = {
 }
 
 type HistoryItem = ClaudeMessage | ClaudeToolCall
+
+const CODEX_CHATGPT_BASE_URL = 'https://chatgpt.com/backend-api/codex'
 
 const DEFAULT_SYSTEM_PROMPT = `You are a helpful AI coding assistant running inside a terminal UI.
 
@@ -234,16 +236,27 @@ export class OpenAIAgentManager {
     this.send('claude:status', session.state.sessionId, { ...session.metadata, compacting: true })
     try {
       const { createOpenAI } = await getOpenAI()
-      const { generateText } = await getAI()
-      const provider = createOpenAI({ apiKey })
+      const { generateText, streamText: streamTextFn } = await getAI()
+      const isCodexOAuth = getKeySource() === 'codex-oauth'
+      const provider = createOpenAI({
+        apiKey,
+        ...(isCodexOAuth ? { baseURL: CODEX_CHATGPT_BASE_URL } : {}),
+      })
+      const compactModel = provider(session.model)
       const truncated = truncateToolOutputs(head)
       const prompt = buildCompactionPrompt(truncated)
-      const result = await generateText({
-        model: provider(session.model),
-        system: 'You are a summarizer. Produce only the requested Markdown summary; no preamble.',
-        prompt,
-      })
-      const summary = result.text.trim()
+      const compactSystem = 'You are a summarizer. Produce only the requested Markdown summary; no preamble.'
+      let summary: string
+      if (isCodexOAuth) {
+        const stream = streamTextFn({
+          model: compactModel, system: compactSystem, prompt,
+          providerOptions: { openai: { store: false, instructions: compactSystem } },
+        })
+        summary = (await stream.text).trim()
+      } else {
+        const result = await generateText({ model: compactModel, system: compactSystem, prompt })
+        summary = result.text.trim()
+      }
       const systemNote: ClaudeMessage = {
         id: `sys-compact-${Date.now()}`,
         sessionId: session.state.sessionId,
@@ -315,7 +328,7 @@ export class OpenAIAgentManager {
     const stag = `[openai:${sessionId.slice(0, 8)}]`
     const apiKey = await loadOpenAIKey()
     if (!apiKey) {
-      this.send('claude:error', sessionId, 'OpenAI API key not configured. Set it in Settings → OpenAI Agent.')
+      this.send('claude:error', sessionId, 'OpenAI API key not configured. Set it in Settings → OpenAI Agent, or login to Codex CLI (codex auth login).')
       return false
     }
 
@@ -428,14 +441,18 @@ export class OpenAIAgentManager {
     try {
       const apiKey = await loadOpenAIKey()
       if (!apiKey) {
-        this.send('claude:error', sessionId, 'OpenAI API key not configured.')
+        this.send('claude:error', sessionId, 'OpenAI API key not configured. Set it in Settings → OpenAI Agent, or login to Codex CLI (codex auth login).')
         this.send('claude:turn-end', sessionId, { reason: 'error', error: 'API key missing' })
         return false
       }
 
       const { createOpenAI } = await getOpenAI()
       const { streamText, stepCountIs } = await getAI()
-      const provider = createOpenAI({ apiKey })
+      const isCodexOAuth = getKeySource() === 'codex-oauth'
+      const provider = createOpenAI({
+        apiKey,
+        ...(isCodexOAuth ? { baseURL: CODEX_CHATGPT_BASE_URL } : {}),
+      })
       const languageModel = provider(session.model)
 
       const tools = buildBuiltinTools({ skills: session.skills.size > 0 })
@@ -464,6 +481,11 @@ export class OpenAIAgentManager {
         stopWhen: stepCountIs(25),
         abortSignal: ctrl.signal,
         experimental_context,
+        ...(isCodexOAuth ? {
+          providerOptions: {
+            openai: { store: false, instructions: session.systemPrompt },
+          },
+        } : {}),
       } as unknown as Parameters<typeof streamText>[0]
       const result = streamText(streamArgs)
 
@@ -704,7 +726,9 @@ export class OpenAIAgentManager {
   }
 
   async getSupportedModels(_sessionId: string): Promise<Array<{ value: string; displayName: string; description: string; source: string }>> {
-    return OPENAI_MODELS.map(m => ({ value: m.value, displayName: m.displayName, description: m.description, source: 'builtin' }))
+    const isCodexOAuth = getKeySource() === 'codex-oauth'
+    const models = isCodexOAuth ? OPENAI_MODELS.filter(m => CODEX_CHATGPT_SUPPORTED_MODELS.has(m.value)) : OPENAI_MODELS
+    return models.map(m => ({ value: m.value, displayName: m.displayName, description: m.description, source: 'builtin' }))
   }
 
   setModel(sessionId: string, model: string): boolean {
@@ -815,5 +839,11 @@ function safeStringify(v: unknown): string {
 function stringifyError(err: unknown): string {
   if (err instanceof Error) return err.message
   if (typeof err === 'string') return err
+  if (typeof err === 'object' && err !== null) {
+    const obj = err as Record<string, unknown>
+    const nested = obj.error as Record<string, unknown> | undefined
+    const msg = nested?.message ?? obj.message
+    if (typeof msg === 'string' && msg.trim()) return msg
+  }
   try { return JSON.stringify(err) } catch { return String(err) }
 }

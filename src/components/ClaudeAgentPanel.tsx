@@ -3880,8 +3880,7 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
                             <span style={{ width: 24 }} />
                             <span style={{ width: 36 }} />
                             <span style={{ width: 36 }} />
-                            <span style={{ width: 76, color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingLeft: 4 }}>{m.model}</span>
-                            <span style={{ width: 76 }} />
+                            <span style={{ width: 156, color: '#666', whiteSpace: 'nowrap', paddingLeft: 4 }}>{m.model}</span>
                             <span style={{ width: 76, textAlign: 'right', color: '#555' }}>{m.cacheRead.toLocaleString()}</span>
                             <span style={{ width: 76, textAlign: 'right', color: '#555' }}>{m.cacheWrite.toLocaleString()}</span>
                             <span style={{ width: 76 }} />
