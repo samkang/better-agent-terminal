@@ -413,14 +413,14 @@ export function registerProxiedHandlers(deps: ProxiedHandlersDeps): void {
   registerHandler('openai:set-api-key', async (_ctx, key: string) => { await setOpenAIKey(key); return true })
   registerHandler('openai:clear-api-key', async () => { await clearOpenAIKey(); return true })
   registerHandler('openai:compact-now', (_ctx, sessionId: string) => getOpenAIManager()?.compactNow(sessionId) ?? false)
-  registerHandler('claude:resume-session', (_ctx, sessionId: string, sdkSessionId: string, cwd: string, model?: string, apiVersion?: 'v1' | 'v2', useWorktree?: boolean, worktreePath?: string, worktreeBranch?: string, agentPreset?: string, codexSandboxMode?: 'read-only' | 'workspace-write' | 'danger-full-access', codexApprovalPolicy?: 'untrusted' | 'on-request' | 'never') => {
+  registerHandler('claude:resume-session', (_ctx, sessionId: string, sdkSessionId: string, cwd: string, model?: string, apiVersion?: 'v1' | 'v2', useWorktree?: boolean, worktreePath?: string, worktreeBranch?: string, agentPreset?: string, codexSandboxMode?: 'read-only' | 'workspace-write' | 'danger-full-access', codexApprovalPolicy?: 'untrusted' | 'on-request' | 'never', permissionMode?: string, effort?: string) => {
     const explicitType: 'claude' | 'codex' | 'openai' =
       agentPreset === 'codex-agent' ? 'codex' :
       agentPreset === 'openai-agent' ? 'openai' : 'claude'
     const type = agentPreset ? explicitType : (sessionManagerMap.get(sessionId) || 'claude')
     sessionManagerMap.set(sessionId, type)
     if (type === 'codex') return getCodexManager()?.resumeSession(sessionId, sdkSessionId, cwd, model, codexSandboxMode, codexApprovalPolicy)
-    if (type === 'openai') return getOpenAIManager()?.resumeSession(sessionId, sdkSessionId, cwd, model)
+    if (type === 'openai') return getOpenAIManager()?.resumeSession(sessionId, sdkSessionId, cwd, model, permissionMode, effort)
     return getClaudeManager()?.resumeSession(sessionId, sdkSessionId, cwd, model, apiVersion, useWorktree, worktreePath, worktreeBranch)
   })
   registerHandler('claude:fork-session', (_ctx, sessionId: string) => getManager(sessionId)?.forkSession(sessionId))

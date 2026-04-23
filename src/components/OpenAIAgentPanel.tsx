@@ -144,7 +144,10 @@ export function OpenAIAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
     const t = workspaceStore.getState().terminals.find(t => t.id === sessionId)
     return !!t?.sdkSessionId
   })
-  const [permissionMode, setPermissionMode] = useState<string>('default')
+  const [permissionMode, setPermissionMode] = useState<string>(() => {
+    const saved = normalizedAgentParams?.permissionMode
+    return typeof saved === 'string' ? saved : 'default'
+  })
   const [currentModel, setCurrentModel] = useState<string>(() => {
     const t = workspaceStore.getState().terminals.find(t => t.id === sessionId)
     if (isCodexSession) return t?.model || ''
@@ -284,7 +287,11 @@ export function OpenAIAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
     if (approvalPolicy === 'untrusted' || approvalPolicy === 'on-request' || approvalPolicy === 'never') {
       setCodexApprovalPolicy(approvalPolicy)
     }
-  }, [normalizedAgentParams?.approvalPolicy, normalizedAgentParams?.sandboxMode])
+    const savedPermissionMode = normalizedAgentParams?.permissionMode
+    if (typeof savedPermissionMode === 'string') {
+      setPermissionMode(savedPermissionMode)
+    }
+  }, [normalizedAgentParams?.approvalPolicy, normalizedAgentParams?.permissionMode, normalizedAgentParams?.sandboxMode])
   const currentTurnMsgIdRef = useRef<string | null>(null)
   // /auto-continue: when enabled, after each turn ends auto-send `prompt`
   // up to `max` times. `used` resets when the user manually sends.
@@ -617,7 +624,13 @@ export function OpenAIAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
         // Use flushSync for Agent/Task tools to ensure the active tasks bar renders immediately
         const isAgentTool = toolCall.toolName === 'Agent' || toolCall.toolName === 'Task'
         const doUpdate = () => setMessages(prev => {
-          if (prev.some(m => 'toolName' in m && m.id === toolCall.id)) return prev
+          const idx = prev.findIndex(m => 'toolName' in m && m.id === toolCall.id)
+          if (idx !== -1) {
+            // Update existing entry (e.g. tool-input-start → tool-call with real input)
+            const updated = [...prev]
+            updated[idx] = { ...prev[idx], ...toolCall } as ClaudeToolCall
+            return updated
+          }
           return [...prev, toolCall]
         })
         if (isAgentTool) { flushSync(doUpdate) } else { doUpdate() }
@@ -800,6 +813,7 @@ export function OpenAIAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
         // Sync UI with backend's current permission mode
         if (m.permissionMode) {
           setPermissionMode(m.permissionMode)
+          workspaceStore.updateTerminalAgentParams(sessionId, { permissionMode: m.permissionMode })
         }
         // Persist SDK session ID per-terminal so /resume and auto-resume can find it
         if (m.sdkSessionId) {
@@ -927,6 +941,7 @@ export function OpenAIAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
       api.onModeChange((sid: string, mode: string) => {
         if (sid !== sessionId) return
         setPermissionMode(mode)
+        workspaceStore.updateTerminalAgentParams(sessionId, { permissionMode: mode })
       }),
 
       api.onPromptSuggestion((sid: string, suggestion: string) => {
@@ -977,6 +992,11 @@ export function OpenAIAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
         : (savedModel || globalSettings.defaultModel)
       if (effectiveModel) setCurrentModel(effectiveModel)
 
+      const savedPermissionMode = typeof normalizedAgentParams?.permissionMode === 'string'
+        ? normalizedAgentParams.permissionMode
+        : permissionMode
+      if (savedPermissionMode) setPermissionMode(savedPermissionMode)
+
       // Use global default effort
       const effectiveEffort = isCodexSession
         ? effortLevel
@@ -988,11 +1008,11 @@ export function OpenAIAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
         historyLoadedRef.current = true
         window.electronAPI.claude.resumeSession(sessionId, savedSdkSessionId, cwd, savedModel, apiVersion,
           useWorktree ? true : undefined, terminal?.worktreePath, terminal?.worktreeBranch, terminal?.agentPreset,
-          codexSandboxMode, codexApprovalPolicy)
+          codexSandboxMode, codexApprovalPolicy, savedPermissionMode, effectiveEffort as EffortLevel)
       } else {
         dlog(`${stag} FRESH startSession`)
         window.electronAPI.claude.startSession(sessionId, {
-          cwd, permissionMode, model: effectiveModel,
+          cwd, permissionMode: savedPermissionMode, model: effectiveModel,
           effort: effectiveEffort as EffortLevel,
           apiVersion,
           agentPreset: terminal?.agentPreset,
@@ -1005,7 +1025,7 @@ export function OpenAIAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
     return () => {
       // Don't remove from startedSessions on unmount — StrictMode will remount
     }
-  }, [sessionId, cwd, isCodexSession, codexSandboxMode, codexApprovalPolicy])
+  }, [sessionId, cwd, isCodexSession, codexSandboxMode, codexApprovalPolicy, effortLevel, normalizedAgentParams?.permissionMode, permissionMode])
 
   // Refresh session metadata when panel becomes active (fixes stale display after window switch)
   useEffect(() => {
@@ -1748,6 +1768,7 @@ export function OpenAIAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
     const idx = availableModes.indexOf(permissionMode as typeof availableModes[number])
     const nextMode = availableModes[(idx + 1) % availableModes.length]
     setPermissionMode(nextMode)
+    workspaceStore.updateTerminalAgentParams(sessionId, { permissionMode: nextMode })
     await window.electronAPI.claude.setPermissionMode(sessionId, nextMode)
   }, [sessionId, permissionMode])
 
