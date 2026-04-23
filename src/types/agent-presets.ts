@@ -71,6 +71,7 @@ export const AGENT_PRESETS: AgentPreset[] = [
     icon: '◯',
     color: '#0ea5e9',
     backend: 'sdk',
+    debug: true,
   },
   {
     id: 'codex-cli',
