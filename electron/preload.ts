@@ -63,6 +63,9 @@ const electronAPI = {
   shell: {
     openExternal: (url: string) => ipcRenderer.invoke('shell:open-external', url),
     openPath: (folderPath: string) => ipcRenderer.invoke('shell:open-path', folderPath),
+    // Electron 32+ removed File.path; use webUtils.getPathForFile() to resolve
+    // a dropped/picked File's absolute path. Returns '' if the file has no path.
+    getPathForFile: (file: File) => webUtils.getPathForFile(file),
   },
   app: {
     openNewInstance: (profileId: string) => ipcRenderer.invoke('app:open-new-instance', profileId),
@@ -204,8 +207,8 @@ const electronAPI = {
       ipcRenderer.invoke('claude:resolve-ask-user', sessionId, toolUseId, answers),
     listSessions: (cwd: string) =>
       ipcRenderer.invoke('claude:list-sessions', cwd),
-    resumeSession: (sessionId: string, sdkSessionId: string, cwd: string, model?: string, apiVersion?: 'v1' | 'v2', useWorktree?: boolean, worktreePath?: string, worktreeBranch?: string, agentPreset?: string, codexSandboxMode?: 'read-only' | 'workspace-write' | 'danger-full-access', codexApprovalPolicy?: 'untrusted' | 'on-request' | 'never') =>
-      ipcRenderer.invoke('claude:resume-session', sessionId, sdkSessionId, cwd, model, apiVersion, useWorktree, worktreePath, worktreeBranch, agentPreset, codexSandboxMode, codexApprovalPolicy),
+    resumeSession: (sessionId: string, sdkSessionId: string, cwd: string, model?: string, apiVersion?: 'v1' | 'v2', useWorktree?: boolean, worktreePath?: string, worktreeBranch?: string, agentPreset?: string, codexSandboxMode?: 'read-only' | 'workspace-write' | 'danger-full-access', codexApprovalPolicy?: 'untrusted' | 'on-request' | 'never', permissionMode?: string, effort?: string) =>
+      ipcRenderer.invoke('claude:resume-session', sessionId, sdkSessionId, cwd, model, apiVersion, useWorktree, worktreePath, worktreeBranch, agentPreset, codexSandboxMode, codexApprovalPolicy, permissionMode, effort),
     forkSession: (sessionId: string) =>
       ipcRenderer.invoke('claude:fork-session', sessionId) as Promise<{ newSdkSessionId: string } | null>,
     rewindToPrompt: (sessionId: string, promptIndex: number) =>
@@ -409,11 +412,6 @@ const electronAPI = {
     append: (panelId: string, lines: string) => ipcRenderer.invoke('worker-buffer:append', panelId, lines),
     readAll: (panelId: string) => ipcRenderer.invoke('worker-buffer:readAll', panelId) as Promise<string>,
     clear: (panelId: string) => ipcRenderer.invoke('worker-buffer:clear', panelId),
-  },
-  shell: {
-    // Electron 32+ removed File.path; use webUtils.getPathForFile() to resolve
-    // a dropped/picked File's absolute path. Returns '' if the file has no path.
-    getPathForFile: (file: File) => webUtils.getPathForFile(file),
   },
 }
 

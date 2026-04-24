@@ -1,6 +1,7 @@
 import type { BrowserWindow } from 'electron'
 import type { ClaudeMessage, ClaudeToolCall, ClaudeSessionState } from '../src/types/claude-agent'
 import type { SessionSummary } from './openai-agent/persistence'
+import { prepareImageForApi } from './image-utils'
 import { logger } from './logger'
 import { broadcastHub } from './remote/broadcast-hub'
 import { buildBuiltinTools } from './openai-tools/registry'
@@ -210,14 +211,47 @@ export class OpenAIAgentManager {
 
   private rebuildModelMessages(session: OpenAISessionInstance): void {
     const msgs: ModelMessage[] = [{ role: 'system', content: session.systemPrompt }]
+    let pendingToolCalls: Array<{ id: string; toolName: string; input: Record<string, unknown>; result?: string }> = []
+    let lastAssistantText = ''
+
+    const flush = () => {
+      if (pendingToolCalls.length === 0) {
+        if (lastAssistantText) {
+          msgs.push({ role: 'assistant', content: lastAssistantText })
+          lastAssistantText = ''
+        }
+        return
+      }
+      const assistantContent: unknown[] = []
+      if (lastAssistantText) assistantContent.push({ type: 'text', text: lastAssistantText })
+      for (const tc of pendingToolCalls) {
+        assistantContent.push({ type: 'tool-call', toolCallId: tc.id, toolName: tc.toolName, args: tc.input })
+      }
+      msgs.push({ role: 'assistant', content: assistantContent })
+      const toolContent: unknown[] = []
+      for (const tc of pendingToolCalls) {
+        toolContent.push({ type: 'tool-result', toolCallId: tc.id, toolName: tc.toolName, result: tc.result ?? '' })
+      }
+      msgs.push({ role: 'tool', content: toolContent })
+      pendingToolCalls = []
+      lastAssistantText = ''
+    }
+
     for (const item of session.state.messages) {
       if ('role' in item) {
         if (item.role === 'system') continue
-        msgs.push({ role: item.role, content: item.content })
+        flush()
+        if (item.role === 'assistant') {
+          lastAssistantText = item.content
+        } else {
+          msgs.push({ role: item.role, content: item.content })
+        }
+      } else {
+        const tc = item as ClaudeToolCall
+        pendingToolCalls.push({ id: tc.id, toolName: tc.toolName, input: tc.input, result: tc.result })
       }
-      // Tool calls are sent via the assistant message's tool_calls field in v6
-      // We skip them here — next turn will not include them, which is fine for text-only resume.
     }
+    flush()
     session.modelMessages = msgs
   }
 
@@ -242,7 +276,7 @@ export class OpenAIAgentManager {
         apiKey,
         ...(isCodexOAuth ? { baseURL: CODEX_CHATGPT_BASE_URL } : {}),
       })
-      const compactModel = provider(session.model)
+      const compactModel = isCodexOAuth ? provider.chat(session.model) : provider(session.model)
       const truncated = truncateToolOutputs(head)
       const prompt = buildCompactionPrompt(truncated)
       const compactSystem = 'You are a summarizer. Produce only the requested Markdown summary; no preamble.'
@@ -265,6 +299,7 @@ export class OpenAIAgentManager {
         timestamp: Date.now(),
       }
       session.state.messages = [systemNote, ...tail]
+      session.modelMessages = []
       await appendEvent(session.jsonlFile, { type: 'compaction', payload: { count: head.length, reason, summary } })
       this.send('claude:history', session.state.sessionId, session.state.messages)
       this.addMessage(session.state.sessionId, {
@@ -422,6 +457,10 @@ export class OpenAIAgentManager {
     session.lastEventAt = Date.now()
     const ctrl = session.abortController
 
+    if (session.modelMessages.length === 0) {
+      this.rebuildModelMessages(session)
+    }
+
     const displayContent = prompt + (images?.length ? `\n[${images.length} image${images.length > 1 ? 's' : ''} attached]` : '')
     this.addMessage(sessionId, {
       id: `user-${Date.now()}`,
@@ -431,8 +470,22 @@ export class OpenAIAgentManager {
       timestamp: Date.now(),
     })
 
-    this.rebuildModelMessages(session)
-    session.modelMessages.push({ role: 'user', content: prompt })
+    // Build user message content — multi-part when images are attached
+    let userContent: unknown = prompt
+    if (images?.length) {
+      const parts: unknown[] = []
+      for (const dataUrl of images) {
+        const prepared = prepareImageForApi(dataUrl)
+        if (prepared) {
+          parts.push({ type: 'image', image: prepared.base64, mimeType: prepared.mimeType })
+        }
+      }
+      if (parts.length > 0) {
+        parts.push({ type: 'text', text: prompt })
+        userContent = parts
+      }
+    }
+    session.modelMessages.push({ role: 'user', content: userContent })
 
     const turnStart = Date.now()
     let currentAssistantText = ''
@@ -449,11 +502,28 @@ export class OpenAIAgentManager {
       const { createOpenAI } = await getOpenAI()
       const { streamText, stepCountIs } = await getAI()
       const isCodexOAuth = getKeySource() === 'codex-oauth'
+      const debugFetch: typeof fetch = async (input, init) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+        const body = typeof init?.body === 'string' ? init.body : '(non-string body)'
+        logger.log(`${stag} → ${init?.method || 'POST'} ${url} body=${body.length > 4000 ? body.slice(0, 4000) + '…(truncated)' : body}`)
+        const res = await fetch(input, init)
+        if (!res.ok) {
+          const clone = res.clone()
+          const text = await clone.text().catch(() => '(unreadable)')
+          logger.error(`${stag} ← ${res.status} ${res.statusText} body=${text.length > 4000 ? text.slice(0, 4000) + '…(truncated)' : text}`)
+        } else {
+          logger.log(`${stag} ← ${res.status} ${res.statusText}`)
+        }
+        return res
+      }
       const provider = createOpenAI({
         apiKey,
+        fetch: debugFetch,
         ...(isCodexOAuth ? { baseURL: CODEX_CHATGPT_BASE_URL } : {}),
       })
-      const languageModel = provider(session.model)
+      const languageModel = isCodexOAuth
+        ? provider.chat(session.model)
+        : provider(session.model)
 
       const tools = buildBuiltinTools({ skills: session.skills.size > 0 })
 
@@ -473,6 +543,18 @@ export class OpenAIAgentManager {
       session.metadata.numTurns++
       this.send('claude:status', sessionId, { ...session.metadata })
 
+      const modelInfo = findModel(session.model)
+      const supportsReasoning = modelInfo?.supportsReasoning === true
+
+      const providerOpts: Record<string, unknown> = {}
+      if (supportsReasoning) providerOpts.reasoningEffort = session.effort
+      if (isCodexOAuth) {
+        providerOpts.store = false
+        providerOpts.instructions = session.systemPrompt
+      }
+
+      logger.log(`${stag} streamText: model=${session.model} supportsReasoning=${supportsReasoning} effort=${session.effort} api=${isCodexOAuth ? 'codex-oauth(chat)' : 'responses'} providerOpts=${JSON.stringify(Object.keys(providerOpts))} msgCount=${session.modelMessages.length - 1}`)
+
       const streamArgs = {
         model: languageModel,
         system: session.systemPrompt,
@@ -481,10 +563,8 @@ export class OpenAIAgentManager {
         stopWhen: stepCountIs(25),
         abortSignal: ctrl.signal,
         experimental_context,
-        ...(isCodexOAuth ? {
-          providerOptions: {
-            openai: { store: false, instructions: session.systemPrompt },
-          },
+        ...(Object.keys(providerOpts).length > 0 ? {
+          providerOptions: { openai: providerOpts },
         } : {}),
       } as unknown as Parameters<typeof streamText>[0]
       const result = streamText(streamArgs)
@@ -611,9 +691,22 @@ export class OpenAIAgentManager {
           }
         }
       }
+
+      // Capture SDK response messages (includes tool calls/results) for cross-turn memory
+      if (!ctrl.signal.aborted && session.abortController === ctrl) {
+        try {
+          const resp = await result.response
+          if (resp.messages?.length) {
+            for (const msg of resp.messages) {
+              session.modelMessages.push(msg as ModelMessage)
+            }
+          }
+        } catch { /* response may not resolve on edge cases */ }
+      }
     } catch (err) {
       if (!ctrl.signal.aborted) {
-        logger.error(`${stag} Turn failed:`, err)
+        const roles = session.modelMessages.slice(1).map((m: ModelMessage) => m.role)
+        logger.error(`${stag} Turn failed (model=${session.model} msgs=[${roles.join(',')}]):`, err)
         const msg = stringifyError(err)
         this.send('claude:error', sessionId, `OpenAI error: ${msg}`)
         this.send('claude:turn-end', sessionId, { reason: 'error', error: msg })
@@ -625,6 +718,9 @@ export class OpenAIAgentManager {
         session.isRunning = false
         session.state.isStreaming = false
         session.currentPrompt = undefined
+        if (ctrl.signal.aborted) {
+          session.modelMessages = []
+        }
         for (const [, pending] of session.pendingPermissions) {
           pending.resolve(false)
         }
@@ -683,6 +779,7 @@ export class OpenAIAgentManager {
     session.sdkSessionId = newId
     session.jsonlFile = sessionFilePath(newId, Date.now())
     session.isRunning = false
+    session.modelMessages = []
     session.toolApprovedOnce.clear()
     session.abortController = new AbortController()
     this.send('claude:session-reset', sessionId)
@@ -712,8 +809,8 @@ export class OpenAIAgentManager {
   }
   isResting(_sessionId: string): boolean { return false }
 
-  async resumeSession(sessionId: string, sdkSessionId: string, cwd: string, model?: string): Promise<boolean> {
-    return this.startSession(sessionId, { cwd, model, resumeSdkSessionId: sdkSessionId })
+  async resumeSession(sessionId: string, sdkSessionId: string, cwd: string, model?: string, permissionMode?: string, effort?: string): Promise<boolean> {
+    return this.startSession(sessionId, { cwd, model, permissionMode, effort, resumeSdkSessionId: sdkSessionId })
   }
 
   getSessionState(sessionId: string): ClaudeSessionState | null {

@@ -7,6 +7,7 @@ import * as pathModule from 'path'
 import type { ClaudeMessage, ClaudeToolCall, ClaudeSessionState } from '../src/types/claude-agent'
 import type { SessionSummary } from './claude-agent-manager'
 import type { CodexEffortLevel } from '../src/types'
+import { prepareImageForApi } from './image-utils'
 import { logger } from './logger'
 import { broadcastHub } from './remote/broadcast-hub'
 
@@ -152,14 +153,12 @@ const CODEX_MODELS: Array<{ value: string; displayName: string; description: str
 
 const sdkThreadIds = new Map<string, string>()
 
-// Save a data URL (data:image/png;base64,...) to a temp file, returns absolute path or null.
+// Save a data URL (data:image/png;base64,...) to a temp file with resize, returns absolute path or null.
 async function dataUrlToTempFile(dataUrl: string): Promise<string | null> {
-  const match = dataUrl.match(/^data:image\/([a-z+]+);base64,(.+)$/i)
-  if (!match) return null
-  const ext = match[1].toLowerCase() === 'jpeg' ? 'jpg' : match[1].toLowerCase()
-  const base64 = match[2]
-  if (base64.length > 20 * 1024 * 1024) return null
-  const buf = Buffer.from(base64, 'base64')
+  const prepared = prepareImageForApi(dataUrl)
+  if (!prepared) return null
+  const ext = prepared.mimeType === 'image/png' ? 'png' : 'jpg'
+  const buf = Buffer.from(prepared.base64, 'base64')
   const dir = pathModule.join(os.tmpdir(), 'bat-codex-images')
   await fs.mkdir(dir, { recursive: true })
   const filePath = pathModule.join(dir, `img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`)
