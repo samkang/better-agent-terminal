@@ -7,7 +7,7 @@ import { broadcastHub } from './remote/broadcast-hub'
 import { wrapInterruptedPrompt } from './agent-prompt-utils'
 import { buildBuiltinTools } from './openai-tools/registry'
 import { TOOL_CONTEXT_KEY, type OpenAIPermissionMode, type OpenAIToolContext } from './openai-tools/context'
-import { loadOpenAIKey, getKeySource } from './openai-agent/api-key'
+import { hasCodexOAuthCredential, loadOpenAIAuthCredential } from './openai-agent/api-key'
 import { DEFAULT_OPENAI_MODEL, findModel, OPENAI_MODELS, CODEX_CHATGPT_SUPPORTED_MODELS } from './openai-agent/models'
 import { scanSkills, buildSkillsSystemPromptSection, type SkillMeta } from './openai-agent/skills-scanner'
 import {
@@ -85,6 +85,7 @@ type ModelMessage = {
 type HistoryItem = ClaudeMessage | ClaudeToolCall
 
 const CODEX_CHATGPT_BASE_URL = 'https://chatgpt.com/backend-api/codex'
+const CODEX_CHATGPT_ONLY_MODELS = new Set(['gpt-5.5'])
 
 const DEFAULT_SYSTEM_PROMPT = `You are a helpful AI coding assistant running inside a terminal UI.
 
@@ -95,12 +96,25 @@ You have access to the following tools for working with the user's codebase:
 - Edit: replace exact text in a file
 - Grep: regex-search file contents
 - Glob: find files by pattern
+- TodoWrite: maintain a structured checklist for multi-step work
 
 Rules:
 - Keep responses concise. Prefer direct action over commentary.
 - When editing, prefer Edit over Write for targeted changes.
 - Always read a file before editing it.
-- Don't make assumptions about the codebase — inspect it.`
+- Don't make assumptions about the codebase — inspect it.
+
+Plan mode:
+- Treat plan mode as read-only investigation. Read files, search, and run safe inspection commands as needed, but do not edit project files.
+- When the task needs implementation, produce a concrete plan with scope, ordered steps, risks, and validation.
+- To request execution approval, call ExitPlanMode with the plan. Wait for the user decision before making changes.
+- If the plan is rejected, revise the plan instead of executing.
+- After approval, continue with the approved scope only.
+
+Execution tracking:
+- For multi-step implementation, call TodoWrite with the full checklist before changing files.
+- Keep exactly one checklist item in_progress while work is active.
+- Mark items completed as soon as they are actually done, not at the end.`
 
 let openaiModule: typeof import('@ai-sdk/openai') | null = null
 let aiModule: typeof import('ai') | null = null
@@ -263,21 +277,28 @@ export class OpenAIAgentManager {
       logger.log(`${stag} Compaction (${reason}) skipped — nothing in head`)
       return false
     }
-    const apiKey = await loadOpenAIKey()
-    if (!apiKey) {
+    const authCredential = await loadOpenAIAuthCredential(CODEX_CHATGPT_ONLY_MODELS.has(session.model))
+    if (!authCredential) {
       this.send('claude:error', session.state.sessionId, 'Compaction failed: OpenAI API key missing')
+      return false
+    }
+    if (CODEX_CHATGPT_ONLY_MODELS.has(session.model) && authCredential.source !== 'codex-oauth') {
+      this.send('claude:error', session.state.sessionId, 'Compaction failed: GPT-5.5 requires Codex ChatGPT sign-in; API-key auth is not supported yet.')
       return false
     }
     this.send('claude:status', session.state.sessionId, { ...session.metadata, compacting: true })
     try {
       const { createOpenAI } = await getOpenAI()
       const { generateText, streamText: streamTextFn } = await getAI()
-      const isCodexOAuth = getKeySource() === 'codex-oauth'
+      const isCodexOAuth = authCredential.source === 'codex-oauth'
       const provider = createOpenAI({
-        apiKey,
-        ...(isCodexOAuth ? { baseURL: CODEX_CHATGPT_BASE_URL } : {}),
+        apiKey: authCredential.apiKey,
+        ...(isCodexOAuth ? {
+          baseURL: CODEX_CHATGPT_BASE_URL,
+          ...(authCredential.accountId ? { headers: { 'ChatGPT-Account-ID': authCredential.accountId } } : {}),
+        } : {}),
       })
-      const compactModel = isCodexOAuth ? provider.chat(session.model) : provider(session.model)
+      const compactModel = isCodexOAuth ? provider.responses(session.model) : provider(session.model)
       const truncated = truncateToolOutputs(head)
       const prompt = buildCompactionPrompt(truncated)
       const compactSystem = 'You are a summarizer. Produce only the requested Markdown summary; no preamble.'
@@ -334,7 +355,8 @@ export class OpenAIAgentManager {
       if (session.permissionMode === 'acceptEdits' && (toolName === 'Read' || toolName === 'Write' || toolName === 'Edit' || toolName === 'Grep' || toolName === 'Glob')) {
         return Promise.resolve(true)
       }
-      if (session.toolApprovedOnce.has(toolName) && session.permissionMode !== 'default') {
+      const isPlanMode = session.permissionMode === 'plan' || session.permissionMode === 'bypassPlan'
+      if (session.toolApprovedOnce.has(toolName) && session.permissionMode !== 'default' && !isPlanMode) {
         return Promise.resolve(true)
       }
       return new Promise<boolean>((resolve) => {
@@ -362,9 +384,9 @@ export class OpenAIAgentManager {
     if (this.sessions.has(sessionId)) return true
 
     const stag = `[openai:${sessionId.slice(0, 8)}]`
-    const apiKey = await loadOpenAIKey()
-    if (!apiKey) {
-      this.send('claude:error', sessionId, 'OpenAI API key not configured. Set it in Settings → OpenAI Agent, or login to Codex CLI (codex auth login).')
+    const authCredential = await loadOpenAIAuthCredential(CODEX_CHATGPT_ONLY_MODELS.has(options.model || DEFAULT_OPENAI_MODEL))
+    if (!authCredential) {
+      this.send('claude:error', sessionId, 'OpenAI API key not configured. Set it in Settings → OpenAI Agent, or login to Codex CLI (`codex login`).')
       return false
     }
 
@@ -491,16 +513,21 @@ export class OpenAIAgentManager {
     let currentThinkingText = ''
 
     try {
-      const apiKey = await loadOpenAIKey()
-      if (!apiKey) {
-        this.send('claude:error', sessionId, 'OpenAI API key not configured. Set it in Settings → OpenAI Agent, or login to Codex CLI (codex auth login).')
+      const authCredential = await loadOpenAIAuthCredential(CODEX_CHATGPT_ONLY_MODELS.has(session.model))
+      if (!authCredential) {
+        this.send('claude:error', sessionId, 'OpenAI API key not configured. Set it in Settings → OpenAI Agent, or login to Codex CLI (`codex login`).')
         this.send('claude:turn-end', sessionId, { reason: 'error', error: 'API key missing' })
+        return false
+      }
+      if (CODEX_CHATGPT_ONLY_MODELS.has(session.model) && authCredential.source !== 'codex-oauth') {
+        this.send('claude:error', sessionId, 'GPT-5.5 is currently available only through Codex ChatGPT sign-in, not API-key auth. Run `codex login` or choose GPT-5.4.')
+        this.send('claude:turn-end', sessionId, { reason: 'error', error: 'GPT-5.5 requires Codex ChatGPT auth' })
         return false
       }
 
       const { createOpenAI } = await getOpenAI()
       const { streamText, stepCountIs } = await getAI()
-      const isCodexOAuth = getKeySource() === 'codex-oauth'
+      const isCodexOAuth = authCredential.source === 'codex-oauth'
       const debugFetch: typeof fetch = async (input, init) => {
         const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
         const body = typeof init?.body === 'string' ? init.body : '(non-string body)'
@@ -516,12 +543,15 @@ export class OpenAIAgentManager {
         return res
       }
       const provider = createOpenAI({
-        apiKey,
+        apiKey: authCredential.apiKey,
         fetch: debugFetch,
-        ...(isCodexOAuth ? { baseURL: CODEX_CHATGPT_BASE_URL } : {}),
+        ...(isCodexOAuth ? {
+          baseURL: CODEX_CHATGPT_BASE_URL,
+          ...(authCredential.accountId ? { headers: { 'ChatGPT-Account-ID': authCredential.accountId } } : {}),
+        } : {}),
       })
       const languageModel = isCodexOAuth
-        ? provider.chat(session.model)
+        ? provider.responses(session.model)
         : provider(session.model)
 
       const tools = buildBuiltinTools({ skills: session.skills.size > 0 })
@@ -532,6 +562,11 @@ export class OpenAIAgentManager {
         permissionMode: session.permissionMode,
         abortSignal: ctrl.signal,
         requestPermission: this.makePermissionRequester(session),
+        setPermissionMode: (mode) => {
+          session.permissionMode = mode
+          this.send('claude:modeChange', sessionId, mode)
+          this.send('claude:status', sessionId, { ...session.metadata, permissionMode: mode })
+        },
         addToolCall: (t) => this.addToolCall(sessionId, t),
         updateToolCall: (id, u) => this.updateToolCall(sessionId, id, u),
         skills: session.skills,
@@ -552,7 +587,7 @@ export class OpenAIAgentManager {
         providerOpts.instructions = session.systemPrompt
       }
 
-      logger.log(`${stag} streamText: model=${session.model} supportsReasoning=${supportsReasoning} effort=${session.effort} api=${isCodexOAuth ? 'codex-oauth(chat)' : 'responses'} providerOpts=${JSON.stringify(Object.keys(providerOpts))} msgCount=${session.modelMessages.length - 1}`)
+      logger.log(`${stag} streamText: model=${session.model} supportsReasoning=${supportsReasoning} effort=${session.effort} api=${isCodexOAuth ? 'codex-oauth(responses)' : 'responses'} providerOpts=${JSON.stringify(Object.keys(providerOpts))} msgCount=${session.modelMessages.length - 1}`)
 
       const streamArgs = {
         model: languageModel,
@@ -617,9 +652,12 @@ export class OpenAIAgentManager {
             const errorVal = typeof out === 'object' && out !== null ? (out as Record<string, unknown>).error : undefined
             const status: 'completed' | 'error' = denied || errorVal ? 'error' : 'completed'
             const resultText = typeof out === 'string' ? out : safeStringify(out)
+            const existing = session.state.messages.find(m => 'toolName' in m && m.id === part.toolCallId) as ClaudeToolCall | undefined
+            const planFilePath = typeof out === 'object' && out !== null && typeof out.planFilePath === 'string' ? out.planFilePath : undefined
             this.updateToolCall(sessionId, part.toolCallId, {
               status,
               result: resultText.slice(0, 8000),
+              ...(planFilePath ? { input: { ...(existing?.input ?? {}), planFilePath } } : {}),
               ...(denied ? { denied: true, denyReason: typeof errorVal === 'string' ? errorVal : 'User denied' } : {}),
             })
             break
@@ -822,8 +860,10 @@ export class OpenAIAgentManager {
   }
 
   async getSupportedModels(_sessionId: string): Promise<Array<{ value: string; displayName: string; description: string; source: string }>> {
-    const isCodexOAuth = getKeySource() === 'codex-oauth'
-    const models = isCodexOAuth ? OPENAI_MODELS.filter(m => CODEX_CHATGPT_SUPPORTED_MODELS.has(m.value)) : OPENAI_MODELS
+    const hasCodexOAuth = await hasCodexOAuthCredential()
+    const models = hasCodexOAuth
+      ? OPENAI_MODELS.filter(m => CODEX_CHATGPT_SUPPORTED_MODELS.has(m.value))
+      : OPENAI_MODELS.filter(m => !CODEX_CHATGPT_ONLY_MODELS.has(m.value))
     return models.map(m => ({ value: m.value, displayName: m.displayName, description: m.description, source: 'builtin' }))
   }
 
@@ -854,7 +894,7 @@ export class OpenAIAgentManager {
   setPermissionMode(sessionId: string, mode: string): boolean {
     const session = this.sessions.get(sessionId)
     if (!session) return false
-    const valid: OpenAIPermissionMode[] = ['default', 'acceptEdits', 'bypassPermissions', 'plan']
+    const valid: OpenAIPermissionMode[] = ['default', 'acceptEdits', 'bypassPermissions', 'plan', 'bypassPlan']
     if (!valid.includes(mode as OpenAIPermissionMode)) return false
     session.permissionMode = mode as OpenAIPermissionMode
     this.send('claude:modeChange', sessionId, mode)

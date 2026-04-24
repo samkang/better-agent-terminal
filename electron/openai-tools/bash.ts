@@ -35,8 +35,12 @@ export const bashTool = tool({
     const timeout = timeoutMs ?? DEFAULT_TIMEOUT_MS
 
     const risky = isRisky(command)
+    const isPlanMode = ctx.permissionMode === 'plan' || ctx.permissionMode === 'bypassPlan'
+    if (isPlanMode && risky) {
+      return { denied: true, error: 'Risky shell commands are disabled in plan mode. Use read-only inspection commands, then request execution with ExitPlanMode.' }
+    }
     const needsApproval =
-      ctx.permissionMode === 'plan' ||
+      isPlanMode ||
       ctx.permissionMode === 'default' ||
       (ctx.permissionMode === 'acceptEdits' && risky) ||
       risky

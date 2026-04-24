@@ -1,7 +1,7 @@
 import type { ClaudeToolCall } from '../../src/types/claude-agent'
 import type { SkillMeta } from '../openai-agent/skills-scanner'
 
-export type OpenAIPermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan'
+export type OpenAIPermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'bypassPlan'
 
 export interface OpenAIToolContext {
   sessionId: string
@@ -9,6 +9,7 @@ export interface OpenAIToolContext {
   permissionMode: OpenAIPermissionMode
   abortSignal: AbortSignal
   requestPermission: (toolName: string, input: Record<string, unknown>, toolCallId: string) => Promise<boolean>
+  setPermissionMode: (mode: OpenAIPermissionMode) => void
   addToolCall: (tool: ClaudeToolCall) => void
   updateToolCall: (id: string, updates: Partial<ClaudeToolCall>) => void
   skills: Map<string, SkillMeta>

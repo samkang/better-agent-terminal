@@ -640,6 +640,13 @@ export function OpenAIAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
         if (sid !== sessionId) return
         workspaceStore.updateTerminalActivity(sessionId)
         const { id, ...updates } = result as { id: string; status: string; result?: string; description?: string }
+        const updatedInput = (updates as { input?: Record<string, unknown> }).input
+        if (updatedInput?.planFilePath) {
+          setActivePlanFile(String(updatedInput.planFilePath))
+          setPlanFileTrigger(n => n + 1)
+          setPlanFileShownAt(Date.now())
+          dismissedPlanFileRef.current = null
+        }
         if ((updates as { description?: string }).description) {
           window.electronAPI.debug.log(`[renderer] onToolResult description update id=${id} desc=${(updates as { description?: string }).description}`)
         }
@@ -2310,6 +2317,7 @@ export function OpenAIAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
   const toolInputSummary = (_toolName: string, input: Record<string, unknown>): string => {
     // Show a compact one-line summary of tool input
     if (input.command) return String(input.command).slice(0, 80)
+    if (input.path) return String(input.path)
     if (input.file_path) return String(input.file_path)
     if (input.pattern) return String(input.pattern)
     if (input.query) return String(input.query).slice(0, 80)
@@ -3192,6 +3200,14 @@ export function OpenAIAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
           {pendingPermission.input.description && (
             <div className="claude-permission-desc">
               {String(pendingPermission.input.description)}
+            </div>
+          )}
+          {typeof pendingPermission.input.diff === 'string' && (
+            <div className="claude-plan-block">
+              <pre className="claude-plan-content">{String(pendingPermission.input.diff).split('\n').slice(0, 14).join('\n')}{String(pendingPermission.input.diff).split('\n').length > 14 ? '\n...' : ''}</pre>
+              <div className="claude-plan-open-btn" onClick={() => setContentModal({ title: `${pendingPermission.toolName} diff`, content: String(pendingPermission.input.diff) })}>
+                View full diff
+              </div>
             </div>
           )}
           <div className="claude-permission-options">

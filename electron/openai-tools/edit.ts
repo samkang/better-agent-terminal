@@ -3,6 +3,7 @@ import * as path from 'path'
 import { z } from 'zod'
 import { tool } from 'ai'
 import { getToolContext } from './context'
+import { createUnifiedDiffPreview } from './diff'
 
 export const editTool = tool({
   description: 'Replace exact text in a file. The old_string must be unique in the file (or use replace_all). Useful for surgical edits; prefer this over Write when changing part of a file.',
@@ -18,6 +19,10 @@ export const editTool = tool({
     const abs = path.isAbsolute(filePath) ? filePath : path.resolve(ctx.cwd, filePath)
 
     try {
+      if (ctx.permissionMode === 'plan' || ctx.permissionMode === 'bypassPlan') {
+        return { denied: true, error: 'Edit is disabled in plan mode. Present a plan first, then call ExitPlanMode to request execution.' }
+      }
+
       const original = await fs.readFile(abs, 'utf8')
 
       if (old_string === new_string) return { error: 'old_string and new_string are identical.' }
@@ -26,15 +31,21 @@ export const editTool = tool({
       if (count === 0) return { error: `old_string not found in ${abs}` }
       if (count > 1 && !replace_all) return { error: `old_string matches ${count} times; use replace_all or provide a more specific snippet.` }
 
-      const needsApproval = ctx.permissionMode === 'default' || ctx.permissionMode === 'plan'
-      if (needsApproval) {
-        const ok = await ctx.requestPermission('Edit', { path: abs, old_string: old_string.slice(0, 300), new_string: new_string.slice(0, 300) }, toolCallId)
-        if (!ok) return { denied: true, error: 'User denied edit.' }
-      }
-
       const updated = replace_all
         ? original.split(old_string).join(new_string)
         : original.replace(old_string, new_string)
+
+      const needsApproval = ctx.permissionMode === 'default'
+      if (needsApproval) {
+        const ok = await ctx.requestPermission('Edit', {
+          path: abs,
+          old_string: old_string.slice(0, 300),
+          new_string: new_string.slice(0, 300),
+          diff: createUnifiedDiffPreview(abs, original, updated, ctx.cwd),
+        }, toolCallId)
+        if (!ok) return { denied: true, error: 'User denied edit.' }
+      }
+
       await fs.writeFile(abs, updated, 'utf8')
       return { path: abs, replacements: replace_all ? count : 1 }
     } catch (err) {

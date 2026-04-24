@@ -8,7 +8,7 @@ export interface OpenAIModelInfo {
 }
 
 export const OPENAI_MODELS: OpenAIModelInfo[] = [
-  { value: 'gpt-5.5',       displayName: 'GPT-5.5',       description: 'Newest frontier GPT-5.5',   contextWindow: 1_050_000, maxOutputTokens: 128_000, supportsReasoning: true },
+  { value: 'gpt-5.5',       displayName: 'GPT-5.5',       description: 'Codex/ChatGPT-only GPT-5.5', contextWindow: 1_050_000, maxOutputTokens: 128_000, supportsReasoning: true },
   { value: 'gpt-5.4',       displayName: 'GPT-5.4',       description: 'Flagship GPT-5.4',           contextWindow: 1_050_000, maxOutputTokens: 128_000, supportsReasoning: true },
   { value: 'gpt-5.4-mini',  displayName: 'GPT-5.4 Mini',  description: 'Fast GPT-5.4',               contextWindow: 400_000,   maxOutputTokens: 128_000, supportsReasoning: true },
   { value: 'gpt-5.4-nano',  displayName: 'GPT-5.4 Nano',  description: 'Cheapest GPT-5.4',           contextWindow: 400_000,   maxOutputTokens: 128_000, supportsReasoning: true },
