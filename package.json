@@ -161,6 +161,8 @@
       "!node_modules/better-sqlite3/deps/**",
       "!node_modules/better-sqlite3/src/**",
       "!node_modules/better-sqlite3/build/Release/obj/**",
+      "!node_modules/@anthropic-ai/claude-agent-sdk-*/**",
+      "!node_modules/@anthropic-ai/*-musl/**",
       "assets/icon.ico",
       "assets/icon.png",
       "assets/icon-512.png"
@@ -169,7 +171,6 @@
       "bin/**",
       "node_modules/@anthropic-ai/claude-code/bin/**",
       "node_modules/@anthropic-ai/claude-code-*/**",
-      "node_modules/@anthropic-ai/claude-agent-sdk-*/**",
       "node_modules/@anthropic-ai/*/vendor/**/*",
       "node_modules/@anthropic-ai/**/*.wasm",
       "node_modules/@openai/codex-*/**",
