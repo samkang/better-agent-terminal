@@ -35,9 +35,10 @@ export const enterPlanModeTool = tool({
   }),
   execute: async ({ reason }, options) => {
     const ctx = getToolContext(options.experimental_context)
-    ctx.setPermissionMode('plan')
+    const mode: OpenAIPermissionMode = ctx.permissionMode === 'bypassPlan' ? 'bypassPlan' : 'plan'
+    ctx.setPermissionMode(mode)
     return {
-      mode: 'plan',
+      mode,
       reason: reason?.trim() || 'Planning before execution',
     }
   },

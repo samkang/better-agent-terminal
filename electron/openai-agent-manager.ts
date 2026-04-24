@@ -373,9 +373,10 @@ export class OpenAIAgentManager {
       return new Promise<boolean>((resolve) => {
         session.pendingPermissions.set(toolCallId, { resolve, toolName, input })
         this.send('claude:permission-request', session.state.sessionId, {
-          toolId: toolCallId,
+          toolUseId: toolCallId,
           toolName,
           input,
+          decisionReason: typeof input.decisionReason === 'string' ? input.decisionReason : undefined,
         })
       })
     }
@@ -950,7 +951,7 @@ export class OpenAIAgentManager {
     )
     if (ok) session.toolApprovedOnce.add(pending.toolName)
     pending.resolve(ok)
-    this.send('claude:permission-resolved', sessionId, { toolId: toolUseId, approved: ok })
+    this.send('claude:permission-resolved', sessionId, toolUseId)
     return true
   }
 

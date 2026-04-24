@@ -831,7 +831,11 @@ export function OpenAIAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
 
       api.onPermissionRequest((sid: string, data: unknown) => {
         if (sid !== sessionId) return
-        setPendingPermission(data as PendingPermission)
+        const raw = data as PendingPermission & { toolId?: string }
+        setPendingPermission({
+          ...raw,
+          toolUseId: raw.toolUseId || raw.toolId || '',
+        })
         setPermissionFocus(0)
         setPermissionCustomText('')
       }),

@@ -1000,6 +1000,52 @@
   word-break: break-word;
   line-height: 1.6;
 }
+
+.codex-agent-panel .claude-tool-row {
+  padding: 6px 10px;
+}
+
+.codex-agent-panel .claude-tool-row-content {
+  font-size: calc(var(--claude-font-size) - 1px);
+  line-height: 1.45;
+}
+
+.codex-agent-panel .claude-message-user,
+.codex-agent-panel .claude-message-assistant {
+  font-size: var(--claude-font-size);
+}
+
+.claude-tool-collapsed-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text-secondary);
+}
+
+.claude-tool-collapsed-preview {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #cfcfcf;
+}
+
+.claude-tool-mini-action {
+  flex-shrink: 0;
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: calc(var(--claude-font-size) - 3px);
+  cursor: pointer;
+}
+
+.claude-tool-mini-action:hover {
+  color: var(--text-primary);
+  border-color: var(--accent-color);
+}
 /* System reminder row — collapsed by default */
 .claude-system-reminder-row {
   cursor: pointer;

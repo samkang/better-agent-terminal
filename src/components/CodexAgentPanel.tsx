@@ -2297,6 +2297,24 @@ export function CodexAgentPanel({ sessionId, cwd, isActive, workspaceId, onClose
     return keys.slice(0, 2).map(k => `${k}: ${String(input[k]).slice(0, 40)}`).join(', ')
   }
 
+  const truncateMiddle = (text: string, max = 220): string => {
+    if (text.length <= max) return text
+    const head = Math.max(20, Math.floor(max * 0.65))
+    const tail = Math.max(10, max - head - 3)
+    return `${text.slice(0, head)}...${text.slice(-tail)}`
+  }
+
+  const firstMeaningfulLine = (text: string): string => {
+    return text.split(/\r?\n/).find(line => line.trim().length > 0)?.trim() || ''
+  }
+
+  const formatContentSize = (text: string): string => {
+    const lines = text ? text.split(/\r?\n/).length : 0
+    const chars = text.length
+    if (lines <= 1) return `${chars.toLocaleString()} chars`
+    return `${lines.toLocaleString()} lines · ${chars.toLocaleString()} chars`
+  }
+
   // Extract main content string for the IN block display
   const toolInputContent = (input: Record<string, unknown>): string => {
     if (input.command) return String(input.command)
@@ -2338,14 +2356,33 @@ export function CodexAgentPanel({ sessionId, cwd, isActive, workspaceId, onClose
 
   const parseContentBlocks = (text: string): string => {
     const trimmed = text.trim()
-    if (!trimmed.startsWith('[')) return text
+    if (!trimmed.startsWith('[') && !trimmed.startsWith('{')) return text
     try {
       const parsed = JSON.parse(trimmed)
-      if (!Array.isArray(parsed)) return text
-      const texts = parsed
-        .filter((b: { type?: string; text?: string }) => b.type === 'text' && typeof b.text === 'string')
-        .map((b: { text: string }) => b.text)
-      return texts.length > 0 ? texts.join('\n\n') : text
+      const extractTextBlocks = (value: unknown): string | null => {
+        if (Array.isArray(value)) {
+          const texts = value
+            .filter((b: { type?: string; text?: string }) => b && b.type === 'text' && typeof b.text === 'string')
+            .map((b: { text: string }) => b.text)
+          return texts.length > 0 ? texts.join('\n\n') : null
+        }
+        if (value && typeof value === 'object') {
+          const record = value as Record<string, unknown>
+          if (record.content !== undefined) return extractTextBlocks(record.content)
+          if (typeof record.text === 'string') return record.text
+          const entries = Object.entries(record)
+          if (entries.length > 0 && entries.every(([, v]) => typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' || v == null)) {
+            return entries.map(([key, v]) => `${key}:\n${String(v ?? '')}`).join('\n\n')
+          }
+        }
+        return null
+      }
+      const extracted = extractTextBlocks(parsed)
+      if (!extracted) return text
+      const reparsed = extracted.trim().startsWith('{') || extracted.trim().startsWith('[')
+        ? parseContentBlocks(extracted)
+        : extracted
+      return reparsed
     } catch {
       return text
     }
@@ -2794,9 +2831,15 @@ export function CodexAgentPanel({ sessionId, cwd, isActive, workspaceId, onClose
       const inContent = toolInputContent(item.input)
       const inBlockId = `in-${item.id}`
       const outBlockId = `out-${item.id}`
-      const inLines = inContent.split('\n')
-      const isInLong = inLines.length > 3
+      const inLines = inContent.split(/\r?\n/)
+      const isInLong = inLines.length > 3 || inContent.length > 220
       const isInExpanded = expandedTools.has(`in-expand-${item.id}`)
+      const inPreview = inLines.length > 3
+        ? inLines.slice(0, 3).join('\n')
+        : truncateMiddle(inContent, 220)
+      const inHiddenSummary = inLines.length > 3
+        ? `+${inLines.length - 3} lines`
+        : `+${Math.max(0, inContent.length - inPreview.length).toLocaleString()} chars`
       return (
         <div key={item.id || index} className="tl-item" data-tool-id={item.id}>
           <div className={`tl-dot ${dotClass}`} />
@@ -2819,13 +2862,13 @@ export function CodexAgentPanel({ sessionId, cwd, isActive, workspaceId, onClose
               >
                 <span className="claude-tool-row-label">IN</span>
                 <span className="claude-tool-row-content">
-                  <LinkedText text={isInLong && !isInExpanded ? inLines.slice(0, 3).join('\n') : inContent} />
+                  <LinkedText text={isInLong && !isInExpanded ? inPreview : inContent} />
                   {isInLong && (
                     <span
                       className="claude-in-toggle"
                       onClick={(e) => { e.stopPropagation(); toggleTool(`in-expand-${item.id}`) }}
                     >
-                      {isInExpanded ? ' [collapse]' : ` ... [+${inLines.length - 3} lines]`}
+                      {isInExpanded ? ' [collapse]' : ` ... [${inHiddenSummary}]`}
                     </span>
                   )}
                 </span>
@@ -2835,11 +2878,14 @@ export function CodexAgentPanel({ sessionId, cwd, isActive, workspaceId, onClose
               </div>
               {item.result && (() => {
                 const raw = typeof item.result === 'string' ? item.result : String(item.result)
-                const { content: outText, reminders, errors } = splitSystemReminders(raw)
+                const normalizedRaw = parseContentBlocks(raw)
+                const { content: outText, reminders, errors } = splitSystemReminders(normalizedRaw)
                 // Collapse by default for read-only tools; collapse all if setting enabled
                 const isReadOnlyTool = ['Read', 'Glob', 'Grep', 'LS', 'NotebookRead'].includes(item.toolName)
-                const shouldCollapse = isReadOnlyTool || settingsStore.getSettings().collapseToolOutputs
+                const isLongOutput = outText.split(/\r?\n/).length > 8 || outText.length > 900
+                const shouldCollapse = isReadOnlyTool || item.toolName === 'Bash' || isLongOutput || settingsStore.getSettings().collapseToolOutputs
                 const isOutExpanded = expandedTools.has(outBlockId)
+                const outPreview = truncateMiddle(firstMeaningfulLine(outText), 180)
                 return (
                   <>
                     {errors.length > 0 && errors.map((err, i) => (
@@ -2857,7 +2903,21 @@ export function CodexAgentPanel({ sessionId, cwd, isActive, workspaceId, onClose
                         <span className="claude-tool-row-content">
                           {isOutExpanded
                             ? <LinkedText text={outText} />
-                            : <span className="claude-tool-collapsed-hint">{outText.split('\n').length} lines</span>
+                            : (
+                              <span className="claude-tool-collapsed-hint">
+                                <span>{formatContentSize(outText)}</span>
+                                {outPreview && <span className="claude-tool-collapsed-preview">{outPreview}</span>}
+                                <button
+                                  className="claude-tool-mini-action"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setContentModal({ title: `${item.toolName} output`, content: outText })
+                                  }}
+                                >
+                                  open
+                                </button>
+                              </span>
+                            )
                           }
                         </span>
                         <span className={`claude-tool-chevron ${isOutExpanded ? 'expanded' : ''}`}>&#9654;</span>
@@ -2997,8 +3057,8 @@ export function CodexAgentPanel({ sessionId, cwd, isActive, workspaceId, onClose
 
   return (
     <div
-      className="claude-agent-panel"
-      style={{ '--claude-font-size': `${claudeFontSize}px` } as React.CSSProperties}
+      className="claude-agent-panel codex-agent-panel"
+      style={{ '--claude-font-size': `${Math.max(11, claudeFontSize - 1)}px` } as React.CSSProperties}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}

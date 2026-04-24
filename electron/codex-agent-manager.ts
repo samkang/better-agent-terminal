@@ -400,6 +400,53 @@ export class CodexAgentManager {
     }
   }
 
+  private parseJsonValue(value: string): unknown {
+    const trimmed = value.trim()
+    if (!trimmed) return value
+    if (!['{', '[', '"'].includes(trimmed[0])) return value
+    try { return JSON.parse(trimmed) } catch { return value }
+  }
+
+  private textFromContentBlocks(value: unknown): string | undefined {
+    if (!value) return undefined
+    if (typeof value === 'string') return value
+    if (Array.isArray(value)) {
+      const texts = value
+        .map(item => {
+          const record = item && typeof item === 'object' ? item as Record<string, unknown> : undefined
+          if (record?.type === 'text' && typeof record.text === 'string') return record.text
+          if (typeof item === 'string') return item
+          return undefined
+        })
+        .filter((text): text is string => typeof text === 'string' && text.length > 0)
+      return texts.length > 0 ? texts.join('\n\n') : undefined
+    }
+    if (typeof value === 'object') {
+      const record = value as Record<string, unknown>
+      if (record.content !== undefined) return this.textFromContentBlocks(record.content)
+      if (typeof record.text === 'string') return record.text
+    }
+    return undefined
+  }
+
+  private formatObjectTextMap(value: unknown): string | undefined {
+    const parsed = typeof value === 'string' ? this.parseJsonValue(value) : value
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined
+    const entries = Object.entries(parsed as Record<string, unknown>)
+    if (entries.length === 0) return undefined
+    if (!entries.every(([, v]) => typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' || v == null)) return undefined
+    return entries.map(([key, v]) => `${key}:\n${String(v ?? '')}`).join('\n\n')
+  }
+
+  private normalizeToolResult(value: unknown): string {
+    const contentText = this.textFromContentBlocks(value)
+    if (contentText !== undefined) return this.formatObjectTextMap(contentText) ?? contentText
+    const objectText = this.formatObjectTextMap(value)
+    if (objectText !== undefined) return objectText
+    if (typeof value === 'string') return value
+    return JSON.stringify(value ?? '')
+  }
+
   private parseFunctionArguments(payload: Record<string, unknown>): Record<string, unknown> {
     const parsed = this.parseJsonRecord(payload.arguments ?? payload.input)
     if (parsed) return parsed
@@ -458,9 +505,9 @@ export class CodexAgentManager {
   }
 
   private resultFromResponseItemOutput(payload: Record<string, unknown>): { result: string; status: 'completed' | 'error' } {
-    const rawOutput = typeof payload.output === 'string' ? payload.output : JSON.stringify(payload.output ?? '')
+    const rawOutput = typeof payload.output === 'string' ? payload.output : this.normalizeToolResult(payload.output)
     const parsed = this.parseJsonRecord(rawOutput)
-    const outputText = typeof parsed?.output === 'string' ? parsed.output : rawOutput
+    const outputText = parsed?.output !== undefined ? this.normalizeToolResult(parsed.output) : rawOutput
     const metadata = parsed?.metadata && typeof parsed.metadata === 'object' ? parsed.metadata as Record<string, unknown> : undefined
     const exitCode = typeof metadata?.exit_code === 'number'
       ? metadata.exit_code
@@ -1059,7 +1106,7 @@ export class CodexAgentManager {
               const errObj = item?.error as { message?: string } | undefined
               const result = status === 'error'
                 ? (errObj?.message || JSON.stringify(item?.error ?? 'MCP call failed'))
-                : (item?.result !== undefined ? JSON.stringify(item.result) : '')
+                : (item?.result !== undefined ? this.normalizeToolResult(item.result) : '')
               if (!this.hasToolCall(sessionId, itemId)) {
                 this.addToolCall(sessionId, {
                   id: itemId,
