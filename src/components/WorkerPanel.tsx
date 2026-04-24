@@ -123,6 +123,7 @@ export const WorkerPanel = memo(function WorkerPanel({ terminalId, procfilePath,
   const fitAddonRef = useRef<FitAddon | null>(null)
   const doResizeRef = useRef<(() => void) | null>(null)
   const isActiveRef = useRef(isActive)
+  const isRemoteClientRef = useRef(false)
   const midLineRef = useRef<Map<string, boolean>>(new Map())
   const processesRef = useRef<WorkerProcess[]>([])
   const shellRef = useRef<string | undefined>()
@@ -492,7 +493,14 @@ export const WorkerPanel = memo(function WorkerPanel({ terminalId, procfilePath,
     // Event listeners
     const unsubOutput = window.electronAPI.pty.onOutput((id, data) => {
       const proc = processesRef.current.find(p => p.ptyId === id)
-      if (proc) writeOutput(proc.name, proc.color, data)
+      if (proc) {
+        if (proc.status !== 'running') {
+          setProcesses(prev => prev.map(p =>
+            p.ptyId === id && p.status !== 'running' ? { ...p, status: 'running' as const, exitCode: undefined } : p
+          ))
+        }
+        writeOutput(proc.name, proc.color, data)
+      }
     })
 
     const unsubExit = window.electronAPI.pty.onExit((id, exitCode) => {
@@ -528,6 +536,10 @@ export const WorkerPanel = memo(function WorkerPanel({ terminalId, procfilePath,
       // Init worker buffer file on disk
       await window.electronAPI.workerBuffer.init(terminalId)
 
+      const remoteStatus = await window.electronAPI.remote.clientStatus().catch(() => ({ connected: false }))
+      const isRemoteClient = remoteStatus.connected === true
+      isRemoteClientRef.current = isRemoteClient
+
       // Resolve shell path
       if (settings.shell === 'custom' && settings.customShellPath) {
         shellRef.current = settings.customShellPath
@@ -557,8 +569,19 @@ export const WorkerPanel = memo(function WorkerPanel({ terminalId, procfilePath,
         ptyId: `${terminalId}__w__${entry.name}`,
         color: WORKER_COLORS[i % WORKER_COLORS.length],
         autoStart: autoStartPrefs[entry.name] !== false, // default true
-        status: (autoStartPrefs[entry.name] !== false ? 'starting' : 'stopped') as ProcessStatus,
+        status: 'stopped' as ProcessStatus,
       }))
+
+      for (const proc of procs) {
+        const existingCwd = await window.electronAPI.pty.getCwd(proc.ptyId).catch(() => null)
+        if (existingCwd) {
+          proc.status = 'running'
+          ptyIdsRef.current.add(proc.ptyId)
+        } else if (!isRemoteClient && proc.autoStart) {
+          proc.status = 'starting'
+        }
+      }
+
       processesRef.current = procs
       setProcesses(procs)
 
@@ -571,7 +594,7 @@ export const WorkerPanel = memo(function WorkerPanel({ terminalId, procfilePath,
       // Start only processes with autoStart enabled
       for (const proc of procs) {
         if (disposed) break
-        if (!proc.autoStart) continue
+        if (isRemoteClient || !proc.autoStart || proc.status === 'running') continue
         ptyIdsRef.current.add(proc.ptyId)
         await window.electronAPI.pty.create({
           id: proc.ptyId,
@@ -603,6 +626,7 @@ export const WorkerPanel = memo(function WorkerPanel({ terminalId, procfilePath,
       terminalRef.current = null
       fitAddonRef.current = null
       window.electronAPI.workerBuffer.clear(terminalId)
+      if (isRemoteClientRef.current) return
       const idsToKill = new Set([
         ...ptyIdsRef.current,
         ...processesRef.current.map(proc => proc.ptyId),
