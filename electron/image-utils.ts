@@ -1,5 +1,3 @@
-import { nativeImage } from 'electron'
-
 const MAX_LONG_EDGE = 2048
 const MAX_BASE64_BYTES = 4 * 1024 * 1024
 const JPEG_QUALITY = 80
@@ -21,6 +19,9 @@ export function prepareImageForApi(dataUrl: string): PreparedImage | null {
   const origMime = match[1].toLowerCase()
   let buf = Buffer.from(match[2], 'base64')
 
+  // Lazy-require so headless bat-server (ELECTRON_RUN_AS_NODE) doesn't pull
+  // 'electron' at server-cli startup — image upload only happens via the UI.
+  const { nativeImage } = require('electron') as typeof import('electron')
   let img = nativeImage.createFromBuffer(buf)
   if (img.isEmpty()) return null
 

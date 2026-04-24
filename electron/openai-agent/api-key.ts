@@ -1,7 +1,8 @@
 import { promises as fs } from 'fs'
 import * as path from 'path'
 import os from 'os'
-import { app, safeStorage } from 'electron'
+import { getDataDir } from '../server-core/data-dir'
+import { getSafeStorage } from '../server-core/safe-storage'
 import { logger } from '../logger'
 
 let keyFilePath: string | null = null
@@ -11,8 +12,7 @@ let loaded = false
 
 function getKeyFilePath(): string {
   if (keyFilePath) return keyFilePath
-  const dir = app?.getPath?.('userData') ?? path.join(process.env.HOME || process.env.USERPROFILE || '.', '.better-agent-terminal')
-  keyFilePath = path.join(dir, 'openai-api-key.bin')
+  keyFilePath = path.join(getDataDir(), 'openai-api-key.bin')
   return keyFilePath
 }
 
@@ -39,6 +39,7 @@ export async function loadOpenAIKey(): Promise<string | null> {
   const p = getKeyFilePath()
   try {
     const buf = await fs.readFile(p)
+    const safeStorage = getSafeStorage()
     if (safeStorage.isEncryptionAvailable()) {
       cachedKey = safeStorage.decryptString(buf)
     } else {
@@ -68,6 +69,7 @@ export async function loadOpenAIKey(): Promise<string | null> {
 export async function setOpenAIKey(key: string): Promise<void> {
   const p = getKeyFilePath()
   await fs.mkdir(path.dirname(p), { recursive: true })
+  const safeStorage = getSafeStorage()
   const payload = safeStorage.isEncryptionAvailable()
     ? safeStorage.encryptString(key)
     : Buffer.from(key, 'utf8')
