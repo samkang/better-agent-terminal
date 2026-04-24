@@ -106,40 +106,60 @@ function codexTargetTriple(): string | undefined {
   return undefined
 }
 
-function findCodexBinary(): string | undefined {
-  const exe = process.platform === 'win32' ? 'codex.exe' : 'codex'
-  const triple = codexTargetTriple()
-
-  if (triple) {
-    const platformPkg = `@openai/codex-${process.platform}-${process.arch}`
-    try {
-      const req = createRequire(import.meta.url ?? __filename)
-      let pkgJson = req.resolve(`${platformPkg}/package.json`)
-      if (pkgJson.includes('app.asar') && !pkgJson.includes('app.asar.unpacked')) {
-        pkgJson = pkgJson.replace('app.asar', 'app.asar.unpacked')
-      }
-      const candidate = pathModule.join(pathModule.dirname(pkgJson), 'vendor', triple, 'codex', exe)
-      if (existsSync(candidate)) {
-        return candidate
-      }
-    } catch {
-      // Platform package not installed — fall through.
-    }
-  }
-
+function findCodexOnPath(): string | undefined {
   try {
     const command = process.platform === 'win32'
       ? 'where.exe codex'
       : 'command -v codex || which codex'
     const result = execSync(command, { encoding: 'utf-8', timeout: 3000 }).trim()
     if (!result) return undefined
-    const first = result.split(/\r?\n/).find(Boolean)?.trim()
-    // Skip the .cmd/.bat shim that npm installs — can't be spawn'd directly.
-    if (first && /\.(cmd|bat)$/i.test(first)) return undefined
-    return first || undefined
+    const candidates = result.split(/\r?\n/).map(s => s.trim()).filter(Boolean)
+    for (const candidate of candidates) {
+      // Skip npm shims: .cmd/.bat/.ps1 wrappers and the extension-less shell
+      // script under node_modules/.bin — none can be spawn'd directly.
+      if (/\.(cmd|bat|ps1)$/i.test(candidate)) continue
+      if (/[\\/]node_modules[\\/]\.bin[\\/]/i.test(candidate)) continue
+      // On Windows, require a real executable extension.
+      if (process.platform === 'win32' && !/\.exe$/i.test(candidate)) continue
+      return candidate
+    }
+    return undefined
   } catch {
     return undefined
   }
+}
+
+function findBundledCodex(): string | undefined {
+  const exe = process.platform === 'win32' ? 'codex.exe' : 'codex'
+  const triple = codexTargetTriple()
+  if (!triple) return undefined
+  const platformPkg = `@openai/codex-${process.platform}-${process.arch}`
+  try {
+    const req = createRequire(import.meta.url ?? __filename)
+    let pkgJson = req.resolve(`${platformPkg}/package.json`)
+    if (pkgJson.includes('app.asar') && !pkgJson.includes('app.asar.unpacked')) {
+      pkgJson = pkgJson.replace('app.asar', 'app.asar.unpacked')
+    }
+    const candidate = pathModule.join(pathModule.dirname(pkgJson), 'vendor', triple, 'codex', exe)
+    if (existsSync(candidate)) return candidate
+  } catch {
+    // Platform package not installed — fall through.
+  }
+  return undefined
+}
+
+function findCodexBinary(): string | undefined {
+  // 1. Explicit override wins.
+  const override = process.env.BAT_CODEX_BIN
+  if (override && existsSync(override)) return override
+
+  // 2. Prefer user-installed codex on PATH — they may have a newer version than bundled
+  //    (e.g. to get gpt-5.5 before it lands in the @openai/codex-sdk bundle).
+  const onPath = findCodexOnPath()
+  if (onPath) return onPath
+
+  // 3. Fall back to the binary bundled with @openai/codex-sdk.
+  return findBundledCodex()
 }
 
 // gpt-5.5 currently requires ChatGPT login (not available via API key auth).
@@ -227,19 +247,29 @@ async function readModelFromSessionLog(threadId: string): Promise<string | undef
 
 function stringifyCodexError(error: unknown, fallback = 'Unknown error'): string {
   if (!error) return fallback
-  if (typeof error === 'string') return error
-  if (error instanceof Error) return error.message || fallback
+  if (typeof error === 'string') return annotateCodexError(error)
+  if (error instanceof Error) return annotateCodexError(error.message || fallback)
   if (typeof error === 'object') {
     const record = error as Record<string, unknown>
     const nested = record.message ?? record.error ?? record.cause
-    if (typeof nested === 'string' && nested.trim()) return nested
+    if (typeof nested === 'string' && nested.trim()) return annotateCodexError(nested)
     try {
-      return JSON.stringify(error)
+      return annotateCodexError(JSON.stringify(error))
     } catch {
-      return String(error)
+      return annotateCodexError(String(error))
     }
   }
-  return String(error)
+  return annotateCodexError(String(error))
+}
+
+function annotateCodexError(message: string): string {
+  // Backend rejects an unknown / unauthorized model slug. Usually means the
+  // bundled codex CLI is older than the model the user selected — upgrading
+  // the CLI (or our SDK bundle) typically fixes it.
+  if (/The model `[^`]+` does not exist or you do not have access to it/i.test(message)) {
+    return `${message}\n\nHint: try upgrading codex CLI (npm i -g @openai/codex) — new models like gpt-5.5 need a recent CLI.`
+  }
+  return message
 }
 
 function parseTimestamp(value: unknown): number {
@@ -509,7 +539,7 @@ export class CodexAgentManager {
 
     const stag = `[codex:${sessionId.slice(0, 8)}]`
     const effectiveModel = options.model || DEFAULT_CODEX_MODEL
-    logger.log(`${stag} Starting session cwd=${options.cwd} model=${effectiveModel}`)
+    logger.log(`${stag} Starting session cwd=${options.cwd} model=${effectiveModel} codex=${codexPath}`)
 
     const sandboxMode = options.codexSandboxMode || 'workspace-write'
     const approvalPolicy = options.codexApprovalPolicy || 'on-request'
