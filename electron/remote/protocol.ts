@@ -44,6 +44,9 @@ export const PROXIED_CHANNELS = new Set([
   'fs:readdir', 'fs:readFile', 'fs:search', 'fs:watch', 'fs:unwatch',
   'fs:home', 'fs:list-dirs', 'fs:mkdir', 'fs:quick-locations',
   'image:read-as-data-url',
+  // OpenAI direct agent settings
+  'openai:list-sessions', 'openai:get-api-key-status', 'openai:set-api-key',
+  'openai:clear-api-key', 'openai:compact-now',
   // Snippet
   'snippet:getAll', 'snippet:getById', 'snippet:create', 'snippet:update',
   'snippet:delete', 'snippet:toggleFavorite', 'snippet:search',

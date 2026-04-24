@@ -1026,7 +1026,8 @@ function registerLocalHandlers() {
   })
 
   // Remote server handlers (always local)
-  ipcMain.handle('remote:start-server', async (_event, options?: { port?: number; token?: string; bindInterface?: 'localhost' | 'tailscale' | 'all' }) => {
+  ipcMain.handle('remote:start-server', async (event, options?: { port?: number; token?: string; bindInterface?: 'localhost' | 'tailscale' | 'all' }) => {
+    remoteServer.setDefaultWindowId(getWindowIdByWebContents(event.sender))
     try { return await remoteServer.start(options ?? {}) }
     catch (err: unknown) { return { error: err instanceof Error ? err.message : String(err) } }
   })
@@ -1044,8 +1045,10 @@ function registerLocalHandlers() {
   }))
 
   // Mobile QR code connection: ensure server is running, return connection URL + fingerprint
-  ipcMain.handle('tunnel:get-connection', async () => {
+  ipcMain.handle('tunnel:get-connection', async (event) => {
     try {
+      const windowId = getWindowIdByWebContents(event.sender)
+      remoteServer.setDefaultWindowId(windowId)
       let port: number
       let token: string
       let fingerprint: string
@@ -1067,7 +1070,9 @@ function registerLocalHandlers() {
         fingerprint = remoteServer.fingerprint!
         boundHost = remoteServer.boundHost
       }
-      return getConnectionInfo(port, token, fingerprint, boundHost)
+      const info = getConnectionInfo(port, token, fingerprint, boundHost)
+      if ('error' in info) return info
+      return { ...info, context: { windowId } }
     } catch (err: unknown) {
       return { error: err instanceof Error ? err.message : String(err) }
     }

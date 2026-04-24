@@ -32,7 +32,7 @@ interface RemoteServerStatus {
   fingerprint: string | null
   bindInterface: 'localhost' | 'tailscale' | 'all' | null
   boundHost: string | null
-  clients: { label: string; connectedAt: number }[]
+  clients: { label: string; windowId?: string | null; connectedAt: number }[]
 }
 
 type BindInterface = 'localhost' | 'tailscale' | 'all'
@@ -71,6 +71,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [qrToken, setQrToken] = useState<string | null>(null)
   const [qrFingerprint, setQrFingerprint] = useState<string | null>(null)
   const [qrPort, setQrPort] = useState<number>(9876)
+  const [qrContext, setQrContext] = useState<{ windowId?: string | null } | undefined>(undefined)
 
   // One-shot connection URL — for `bind=all` we need a usable host (not 0.0.0.0),
   // so we resolve it on-demand via tunnel.getConnection().
@@ -298,9 +299,9 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     setServerStatus(ss)
   }
 
-  const generateQrForIp = useCallback(async (ip: string, mode: string, token: string, fingerprint: string, port: number) => {
+  const generateQrForIp = useCallback(async (ip: string, mode: string, token: string, fingerprint: string, port: number, context?: { windowId?: string | null }) => {
     const url = `wss://${ip}:${port}`
-    const payload = JSON.stringify({ url, token, fingerprint, mode })
+    const payload = JSON.stringify({ url, token, fingerprint, mode, context })
     const dataUrl = await QRCode.toDataURL(payload, { width: 256, margin: 2 })
     setQrDataUrl(dataUrl)
     setQrInfo({ url, mode })
@@ -318,9 +319,10 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
       setQrAddresses(result.addresses)
       setQrToken(result.token)
       setQrFingerprint(result.fingerprint)
+      setQrContext(result.context)
       const port = parseInt(result.url.split(':').pop() || '9876')
       setQrPort(port)
-      await generateQrForIp(result.addresses[0].ip, result.addresses[0].mode, result.token, result.fingerprint, port)
+      await generateQrForIp(result.addresses[0].ip, result.addresses[0].mode, result.token, result.fingerprint, port, result.context)
       // Refresh server status since we may have started it
       const ss = await window.electronAPI.remote.serverStatus()
       setServerStatus(ss)
@@ -861,7 +863,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                         value={qrInfo?.url?.split('//')[1]?.split(':')[0] || ''}
                         onChange={async (e) => {
                           const addr = qrAddresses.find(a => a.ip === e.target.value)
-                          if (addr && qrToken && qrFingerprint) await generateQrForIp(addr.ip, addr.mode, qrToken, qrFingerprint, qrPort)
+                          if (addr && qrToken && qrFingerprint) await generateQrForIp(addr.ip, addr.mode, qrToken, qrFingerprint, qrPort, qrContext)
                         }}
                       >
                         {qrAddresses.map(addr => <option key={addr.ip} value={addr.ip}>{addr.label}</option>)}

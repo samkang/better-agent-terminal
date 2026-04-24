@@ -15,6 +15,7 @@ import { readEncryptedString, writeEncryptedString } from './secrets'
 interface AuthenticatedClient {
   ws: WebSocket
   label: string
+  windowId: string | null
   connectedAt: number
 }
 
@@ -76,6 +77,7 @@ export class RemoteServer {
   private authFailures: Map<string, FailureEntry> = new Map()
   private _bindInterface: BindInterface = 'localhost'
   private _boundHost: string = '127.0.0.1'
+  private defaultWindowId: string | null = null
   configDir: string = '' // Set by main.ts to app.getPath('userData')
 
   get port(): number | null {
@@ -100,11 +102,16 @@ export class RemoteServer {
     return this._boundHost
   }
 
-  get connectedClients(): { label: string; connectedAt: number }[] {
+  get connectedClients(): { label: string; windowId: string | null; connectedAt: number }[] {
     return Array.from(this.clients.values()).map(c => ({
       label: c.label,
+      windowId: c.windowId,
       connectedAt: c.connectedAt
     }))
+  }
+
+  setDefaultWindowId(windowId: string | null): void {
+    this.defaultWindowId = windowId
   }
 
   private tokenPath(): string {
@@ -236,16 +243,24 @@ export class RemoteServer {
 
         if (frame.type === 'auth') {
           if (frame.token === this.token) {
+            const requestedContext = frame.args?.[1]
+            const requestedWindowId =
+              requestedContext &&
+              typeof requestedContext === 'object' &&
+              typeof (requestedContext as { windowId?: unknown }).windowId === 'string'
+                ? (requestedContext as { windowId: string }).windowId
+                : null
             authenticated = true
             clearTimeout(authTimeout)
             this.clearAuthFailures(ip)
             this.clients.set(ws, {
               ws,
               label: (frame.args?.[0] as string) || 'Remote Client',
+              windowId: requestedWindowId || this.defaultWindowId,
               connectedAt: Date.now()
             })
             this.sendFrame(ws, { type: 'auth-result', id: frame.id, result: true })
-            logger.log(`[RemoteServer] Client authenticated from ${ip}: ${this.clients.get(ws)?.label}`)
+            logger.log(`[RemoteServer] Client authenticated from ${ip}: ${this.clients.get(ws)?.label} window=${this.clients.get(ws)?.windowId || '(none)'}`)
           } else {
             this.recordAuthFailure(ip)
             this.sendFrame(ws, { type: 'auth-result', id: frame.id, error: 'Invalid token' })
@@ -277,7 +292,8 @@ export class RemoteServer {
             while (args.length > 0 && args[args.length - 1] == null) {
               args = args.slice(0, -1)
             }
-            const result = await invokeHandler(frame.channel, args, null, true)
+            const client = this.clients.get(ws)
+            const result = await invokeHandler(frame.channel, args, client?.windowId ?? null, true)
             this.sendFrame(ws, { type: 'invoke-result', id: frame.id, result })
           } catch (err: unknown) {
             const message = err instanceof Error ? err.message : String(err)

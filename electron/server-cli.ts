@@ -117,7 +117,7 @@ async function main(): Promise<void> {
   const ptyManager = new PtyManager(() => [])
   const claudeManager = new ClaudeAgentManager(() => [])
   const codexManager = new CodexAgentManager(() => [])
-  const sessionManagerMap = new Map<string, 'claude' | 'codex'>()
+  const sessionManagerMap = new Map<string, 'claude' | 'codex' | 'openai'>()
   const windowRegistry = new WindowRegistry()
   const profileManager = new ProfileManager()
   profileManager.setWindowRegistry(windowRegistry)
@@ -128,6 +128,7 @@ async function main(): Promise<void> {
     getPtyManager: () => ptyManager,
     getClaudeManager: () => claudeManager,
     getCodexManager: () => codexManager,
+    getOpenAIManager: () => null,
     sessionManagerMap,
     windowRegistry,
     profileManager,

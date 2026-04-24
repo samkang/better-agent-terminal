@@ -366,7 +366,7 @@ const electronAPI = {
     stopServer: () =>
       ipcRenderer.invoke('remote:stop-server') as Promise<boolean>,
     serverStatus: () =>
-      ipcRenderer.invoke('remote:server-status') as Promise<{ running: boolean; port: number | null; fingerprint: string | null; bindInterface: 'localhost' | 'tailscale' | 'all' | null; boundHost: string | null; clients: { label: string; connectedAt: number }[] }>,
+      ipcRenderer.invoke('remote:server-status') as Promise<{ running: boolean; port: number | null; fingerprint: string | null; bindInterface: 'localhost' | 'tailscale' | 'all' | null; boundHost: string | null; clients: { label: string; windowId?: string | null; connectedAt: number }[] }>,
     connect: (host: string, port: number, token: string, fingerprint: string, label?: string) =>
       ipcRenderer.invoke('remote:connect', host, port, token, fingerprint, label) as Promise<{ connected: boolean } | { error: string }>,
     disconnect: () =>
@@ -380,7 +380,7 @@ const electronAPI = {
   },
   tunnel: {
     getConnection: () =>
-      ipcRenderer.invoke('tunnel:get-connection') as Promise<{ url: string; token: string; fingerprint: string; mode: string; addresses: { ip: string; mode: string; label: string }[] } | { error: string }>,
+      ipcRenderer.invoke('tunnel:get-connection') as Promise<{ url: string; token: string; fingerprint: string; mode: string; addresses: { ip: string; mode: string; label: string }[]; context?: { windowId?: string | null } } | { error: string }>,
   },
   system: {
     onResume: (callback: () => void) => {
