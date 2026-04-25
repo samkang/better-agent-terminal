@@ -554,8 +554,7 @@ class WorkspaceStore {
   listenForReload(): () => void {
     return window.electronAPI.workspace.onReload((data?: string) => {
       if (data) {
-        this.applySerializedData(data)
-        this.save()
+        this.applySerializedData(data, { preserveActiveSelection: true })
         return
       }
       this.load()
@@ -613,7 +612,7 @@ class WorkspaceStore {
     }
   }
 
-  private applySerializedData(data: string): void {
+  private applySerializedData(data: string, options?: { preserveActiveSelection?: boolean }): void {
     try {
       const parsed = JSON.parse(data)
       // Restore terminals with empty runtime fields
@@ -647,17 +646,28 @@ class WorkspaceStore {
           pid: undefined,
         }
       }).filter((t: TerminalInstance | null): t is TerminalInstance => t !== null)
+      const currentActiveWorkspaceId = this.state.activeWorkspaceId
+      const shouldPreserveActive = !!options?.preserveActiveSelection
+        && !!currentActiveWorkspaceId
+        && workspaces.some((w: Workspace) => w.id === currentActiveWorkspaceId)
+      const activeWorkspaceId = shouldPreserveActive
+        ? currentActiveWorkspaceId
+        : parsed.activeWorkspaceId || null
+
       // Restore last focused terminal for the active workspace
-      const activeWs = workspaces.find((w: Workspace) => w.id === parsed.activeWorkspaceId)
+      const activeWs = workspaces.find((w: Workspace) => w.id === activeWorkspaceId)
       const savedFocusId = activeWs?.focusedTerminalId
-      const restoredFocus = savedFocusId && terminals.find(
-        (t: TerminalInstance) => t.id === savedFocusId && t.workspaceId === parsed.activeWorkspaceId
-      ) ? savedFocusId : null
+      const focusCandidate = shouldPreserveActive
+        ? this.state.focusedTerminalId || savedFocusId
+        : savedFocusId
+      const restoredFocus = focusCandidate && terminals.find(
+        (t: TerminalInstance) => t.id === focusCandidate && t.workspaceId === activeWorkspaceId
+      ) ? focusCandidate : null
 
       this.state = {
         ...this.state,
         workspaces,
-        activeWorkspaceId: parsed.activeWorkspaceId || null,
+        activeWorkspaceId,
         terminals,
         activeTerminalId: parsed.activeTerminalId || null,
         focusedTerminalId: restoredFocus,
