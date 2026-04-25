@@ -1090,7 +1090,7 @@ function registerLocalHandlers() {
         const boundProfileId = senderEntry?.profileId ?? null
         // Drop any previous connection before creating a new one.
         try { remoteClient?.disconnect() } catch { /* ignore */ }
-        const client = new RemoteClient(() => getWindowsForProfile(remoteClientProfileId))
+        const client = new RemoteClient(() => getWindowsForProfile(boundProfileId))
         const ok = await client.connect({ host, port, token, fingerprint, label })
         if (!ok) {
           return { error: 'Connection failed (auth rejected, unreachable, or fingerprint mismatch)' }
@@ -1111,10 +1111,16 @@ function registerLocalHandlers() {
       return true
     })
   })
-  ipcMain.handle('remote:client-status', async () => ({
-    connected: remoteClient?.isConnected ?? false,
-    info: remoteClient?.connectionInfo ?? null
-  }))
+  ipcMain.handle('remote:client-status', async (event) => {
+    const senderWindowId = getWindowIdByWebContents(event.sender)
+    const senderEntry = senderWindowId ? await windowRegistry.getEntry(senderWindowId) : null
+    const senderProfileId = senderEntry?.profileId ?? null
+    const connected = !!remoteClient?.isConnected && !!remoteClientProfileId && senderProfileId === remoteClientProfileId
+    return {
+      connected,
+      info: connected ? remoteClient?.connectionInfo ?? null : null,
+    }
+  })
   ipcMain.handle('remote:test-connection', async (_event, host: string, port: number, token: string, fingerprint: string) => {
     if (!fingerprint) return { ok: false, error: 'fingerprint is required' }
     const testClient = new RemoteClient(() => [])
