@@ -11,6 +11,7 @@ import { workspaceStore } from '../stores/workspace-store'
 import type { AgentPresetId } from '../types/agent-presets'
 import { LinkedText, FilePreviewModal } from './PathLinker'
 import { renderChatMarkdown, openChatMarkdownLink } from '../utils/chat-markdown'
+import { extractInterruptedContinuation } from '../utils/interrupted-prompt'
 
 interface SessionMeta {
   model?: string
@@ -90,6 +91,7 @@ export interface CodexAgentPanelProps {
   showAssistantMsg?: boolean
   showToolMsg?: boolean
   showThinkingMsg?: boolean
+  isRemoteConnected?: boolean
 }
 
 interface AttachedImage {
@@ -107,12 +109,12 @@ type MessageItem = ClaudeMessage | ClaudeToolCall
 // Track sessions that have been started to prevent duplicate calls across StrictMode remounts
 const startedSessions = new Set<string>()
 
-export function CodexAgentPanel({ sessionId, cwd, isActive, workspaceId, onClose, showUserMsg = true, showAssistantMsg = true, showToolMsg = true, showThinkingMsg = true }: Readonly<CodexAgentPanelProps>) {
+export function CodexAgentPanel({ sessionId, cwd, isActive, workspaceId, onClose, showUserMsg = true, showAssistantMsg = true, showToolMsg = true, showThinkingMsg = true, isRemoteConnected = false }: Readonly<CodexAgentPanelProps>) {
   const { t } = useTranslation()
   const terminal = workspaceStore.getState().terminals.find(t => t.id === sessionId)
   const isCodexSession = true
   const isV2Session = terminal?.agentPreset === 'claude-code-v2'
-  const isWorktreeSession = terminal?.agentPreset === 'claude-code-worktree'
+  const isWorktreeSession = terminal?.agentPreset === 'codex-agent-worktree'
   const normalizedAgentParams = normalizeAgentParams(terminal?.agentPreset, terminal?.agentParams)
   const [messages, setMessages] = useState<MessageItem[]>([])
   const inputValueRef = useRef('')
@@ -616,14 +618,25 @@ export function CodexAgentPanel({ sessionId, cwd, isActive, workspaceId, onClose
             ? { ...message, thinking: prevThinking }
             : message
           setMessages(prev => {
-            if (prev.some(m => m.id === finalMsg.id)) return prev
+            const interruptedContinuation = finalMsg.role === 'user'
+              ? extractInterruptedContinuation(finalMsg.content)
+              : null
+            const nextPrev = interruptedContinuation
+              ? prev.filter(m => !(
+                !isToolCall(m) &&
+                (m as ClaudeMessage).role === 'user' &&
+                (m as ClaudeMessage).content === interruptedContinuation &&
+                Math.abs((m as ClaudeMessage).timestamp - finalMsg.timestamp) < 10000
+              ))
+              : prev
+            if (nextPrev.some(m => m.id === finalMsg.id)) return nextPrev
             // Dedup user messages: if a local user message with same content exists within 5s, skip
-            if (finalMsg.role === 'user' && prev.some(m =>
+            if (finalMsg.role === 'user' && nextPrev.some(m =>
               !isToolCall(m) && (m as ClaudeMessage).role === 'user' &&
               (m as ClaudeMessage).content === finalMsg.content &&
               Math.abs((m as ClaudeMessage).timestamp - finalMsg.timestamp) < 5000
-            )) return prev
-            return [...prev, finalMsg]
+            )) return nextPrev
+            return [...nextPrev, finalMsg]
           })
           return ''
         })
@@ -1009,7 +1022,7 @@ export function CodexAgentPanel({ sessionId, cwd, isActive, workspaceId, onClose
       const savedSdkSessionId = terminal?.sdkSessionId
       const savedModel = terminal?.model
       const apiVersion = terminal?.agentPreset === 'claude-code-v2' ? 'v2' as const : 'v1' as const
-      const useWorktree = terminal?.agentPreset === 'claude-code-worktree' || !!terminal?.worktreePath
+      const useWorktree = terminal?.agentPreset === 'codex-agent-worktree' || !!terminal?.worktreePath
       const globalSettings = settingsStore.getSettings()
       dlog(`${stag} sdkSessionId=${savedSdkSessionId?.slice(0, 8)} pendingPrompt="${terminal?.pendingPrompt || ''}" apiVersion=${apiVersion}`)
 
@@ -1712,7 +1725,9 @@ export function CodexAgentPanel({ sessionId, cwd, isActive, workspaceId, onClose
       promptToSend = filePrefix + (trimmed ? '\n\n' + trimmed : '')
     }
 
-    // Add user message locally
+    // Add user message locally only when this renderer can authoritatively predict display.
+    // Remote clients and running turns wait for the host/backend message so wrapping/queueing stays consistent.
+    const shouldEchoUserMessageLocally = !isRemoteConnected && !isStreaming
     const imageNote = imageDataUrls.length > 0
       ? `\n[${imageDataUrls.length} image${imageDataUrls.length > 1 ? 's' : ''} attached]`
       : ''
@@ -1723,16 +1738,18 @@ export function CodexAgentPanel({ sessionId, cwd, isActive, workspaceId, onClose
     const displayContent = (trimmed + imageNote + fileNote).replace(/^\n/, '')
     const userMsgId = `user-${Date.now()}`
     currentTurnMsgIdRef.current = userMsgId
-    setMessages(prev => [...prev, {
-      id: userMsgId,
-      sessionId,
-      role: 'user' as const,
-      content: displayContent,
-      timestamp: Date.now(),
-    }])
+    if (shouldEchoUserMessageLocally) {
+      setMessages(prev => [...prev, {
+        id: userMsgId,
+        sessionId,
+        role: 'user' as const,
+        content: displayContent,
+        timestamp: Date.now(),
+      }])
+    }
 
     await window.electronAPI.claude.sendMessage(sessionId, promptToSend, imageDataUrls.length > 0 ? imageDataUrls : undefined)
-  }, [isStreaming, sessionId, attachedImages, attachedFiles, clearInput])
+  }, [isRemoteConnected, isStreaming, sessionId, attachedImages, attachedFiles, clearInput])
 
   const handleInterrupt = useCallback(() => {
     if (!isStreaming) return

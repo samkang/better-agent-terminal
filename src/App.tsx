@@ -575,6 +575,7 @@ export default function App() {
               terminals={workspaceStore.getWorkspaceTerminals(ws.id)}
               focusedTerminalId={state.focusedTerminalId}
               isActive={true}
+              isRemoteConnected={isRemoteConnected}
             />
           </div>
         </main>
@@ -634,6 +635,7 @@ export default function App() {
                 terminals={workspaceStore.getWorkspaceTerminals(workspace.id)}
                 focusedTerminalId={workspace.id === state.activeWorkspaceId ? state.focusedTerminalId : null}
                 isActive={workspace.id === state.activeWorkspaceId}
+                isRemoteConnected={isRemoteConnected}
               />
             </div>
           ))

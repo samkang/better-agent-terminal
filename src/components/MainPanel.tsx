@@ -20,13 +20,14 @@ interface MainPanelProps {
   onRestart: (id: string) => void
   onSwitchApiVersion?: (id: string) => void
   workspaceId?: string
+  isRemoteConnected?: boolean
 }
 
-export const MainPanel = memo(function MainPanel({ terminal, isActive, onClose, onRestart, onSwitchApiVersion, workspaceId }: Readonly<MainPanelProps>) {
+export const MainPanel = memo(function MainPanel({ terminal, isActive, onClose, onRestart, onSwitchApiVersion, workspaceId, isRemoteConnected = false }: Readonly<MainPanelProps>) {
   const isWorker = !!terminal.procfilePath
   const isAgent = terminal.agentPreset && terminal.agentPreset !== 'none'
-  const isSdkManaged = terminal.agentPreset === 'claude-code' || terminal.agentPreset === 'claude-code-v2' || terminal.agentPreset === 'claude-code-worktree' || terminal.agentPreset === 'codex-agent' || terminal.agentPreset === 'openai-agent'
-  const isCodexAgent = terminal.agentPreset === 'codex-agent'
+  const isSdkManaged = terminal.agentPreset === 'claude-code' || terminal.agentPreset === 'claude-code-v2' || terminal.agentPreset === 'claude-code-worktree' || terminal.agentPreset === 'codex-agent' || terminal.agentPreset === 'codex-agent-worktree' || terminal.agentPreset === 'openai-agent'
+  const isCodexAgent = terminal.agentPreset === 'codex-agent' || terminal.agentPreset === 'codex-agent-worktree'
   const isOpenAIAgent = terminal.agentPreset === 'openai-agent'
   const isClaudeCode = isSdkManaged
   const agentConfig = isAgent ? getAgentPreset(terminal.agentPreset!) : null
@@ -174,6 +175,7 @@ export const MainPanel = memo(function MainPanel({ terminal, isActive, onClose, 
                 showAssistantMsg={showAssistantMsg}
                 showToolMsg={showToolMsg}
                 showThinkingMsg={showThinkingMsg}
+                isRemoteConnected={isRemoteConnected}
               />
             ) : isCodexAgent ? (
               <CodexAgentPanel
@@ -186,6 +188,7 @@ export const MainPanel = memo(function MainPanel({ terminal, isActive, onClose, 
                 showAssistantMsg={showAssistantMsg}
                 showToolMsg={showToolMsg}
                 showThinkingMsg={showThinkingMsg}
+                isRemoteConnected={isRemoteConnected}
               />
             ) : (
               <ClaudeAgentPanel
@@ -198,6 +201,7 @@ export const MainPanel = memo(function MainPanel({ terminal, isActive, onClose, 
                 showAssistantMsg={showAssistantMsg}
                 showToolMsg={showToolMsg}
                 showThinkingMsg={showThinkingMsg}
+                isRemoteConnected={isRemoteConnected}
               />
             )}
           </Suspense>

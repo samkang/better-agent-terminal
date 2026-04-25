@@ -47,6 +47,7 @@ interface SessionMetadata {
 interface QueuedMessage {
   prompt: string
   images?: string[]
+  suppressUserMessage?: boolean
 }
 
 interface PendingPermission {
@@ -479,7 +480,7 @@ export class OpenAIAgentManager {
     return true
   }
 
-  async sendMessage(sessionId: string, prompt: string, images?: string[]): Promise<boolean> {
+  async sendMessage(sessionId: string, prompt: string, images?: string[], suppressUserMessage = false): Promise<boolean> {
     const session = this.sessions.get(sessionId)
     if (!session) return false
     const stag = `[openai:${sessionId.slice(0, 8)}]`
@@ -490,7 +491,15 @@ export class OpenAIAgentManager {
       session.abortController.abort()
       session.messageQueue.length = 0
       const contextual = aborted ? wrapInterruptedPrompt(aborted, prompt) : prompt
-      session.messageQueue.push({ prompt: contextual, images })
+      const displayContent = contextual + (images?.length ? `\n[${images.length} image${images.length > 1 ? 's' : ''} attached]` : '')
+      this.addMessage(sessionId, {
+        id: `user-${Date.now()}`,
+        sessionId,
+        role: 'user',
+        content: displayContent,
+        timestamp: Date.now(),
+      })
+      session.messageQueue.push({ prompt: contextual, images, suppressUserMessage: true })
       return true
     }
 
@@ -505,14 +514,16 @@ export class OpenAIAgentManager {
       this.rebuildModelMessages(session)
     }
 
-    const displayContent = prompt + (images?.length ? `\n[${images.length} image${images.length > 1 ? 's' : ''} attached]` : '')
-    this.addMessage(sessionId, {
-      id: `user-${Date.now()}`,
-      sessionId,
-      role: 'user',
-      content: displayContent,
-      timestamp: Date.now(),
-    })
+    if (!suppressUserMessage) {
+      const displayContent = prompt + (images?.length ? `\n[${images.length} image${images.length > 1 ? 's' : ''} attached]` : '')
+      this.addMessage(sessionId, {
+        id: `user-${Date.now()}`,
+        sessionId,
+        role: 'user',
+        content: displayContent,
+        timestamp: Date.now(),
+      })
+    }
 
     // Build user message content — multi-part when images are attached
     let userContent: unknown = prompt
@@ -801,7 +812,7 @@ export class OpenAIAgentManager {
 
         const next = session.messageQueue.shift()
         if (next) {
-          await this.sendMessage(sessionId, next.prompt, next.images)
+          await this.sendMessage(sessionId, next.prompt, next.images, next.suppressUserMessage)
         }
       }
     }

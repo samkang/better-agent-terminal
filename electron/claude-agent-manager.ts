@@ -528,6 +528,14 @@ export class ClaudeAgentManager {
       session.pendingAskUser.clear()
       session.messageQueue.length = 0
       const contextualPrompt = abortedPrompt ? wrapInterruptedPrompt(abortedPrompt, prompt) : prompt
+      const queuedDisplayContent = contextualPrompt + (images?.length ? `\n[${images.length} image${images.length > 1 ? 's' : ''} attached]` : '')
+      this.addMessage(sessionId, {
+        id: `user-${Date.now()}`,
+        sessionId,
+        role: 'user',
+        content: queuedDisplayContent,
+        timestamp: Date.now(),
+      })
       session.messageQueue.push({ prompt: contextualPrompt, images })
       return true
     }
