@@ -625,6 +625,16 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
               (m as ClaudeMessage).content === finalMsg.content &&
               Math.abs((m as ClaudeMessage).timestamp - finalMsg.timestamp) < 5000
             )) return nextPrev
+            if (finalMsg.role === 'assistant') {
+              const lastNonTool = [...nextPrev].reverse().find(m => !isToolCall(m)) as ClaudeMessage | undefined
+              if (
+                lastNonTool?.role === 'assistant' &&
+                lastNonTool.content === finalMsg.content &&
+                Math.abs(lastNonTool.timestamp - finalMsg.timestamp) < 10000
+              ) {
+                return nextPrev
+              }
+            }
             return [...nextPrev, finalMsg]
           })
           return ''

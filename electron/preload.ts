@@ -234,6 +234,11 @@ const electronAPI = {
       ipcRenderer.on('claude:history', handler)
       return () => ipcRenderer.removeListener('claude:history', handler)
     },
+    onResumeLoading: (callback: (sessionId: string, loading: boolean) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, sessionId: string, loading: boolean) => callback(sessionId, loading)
+      ipcRenderer.on('claude:resume-loading', handler)
+      return () => ipcRenderer.removeListener('claude:resume-loading', handler)
+    },
     onPermissionRequest: (callback: (sessionId: string, data: unknown) => void) => {
       const handler = (_event: Electron.IpcRendererEvent, sessionId: string, data: unknown) => callback(sessionId, data)
       ipcRenderer.on('claude:permission-request', handler)

@@ -818,8 +818,8 @@ export class ClaudeAgentManager {
         || errMsg.includes('aborted')
         || session?.abortController.signal.aborted
       if (!isAbort) {
-        // If we were trying to resume and the process crashed, retry without resume
-        if (resumeId && errMsg.includes('exited with code')) {
+        // If the persisted Claude conversation disappeared, retry without resume.
+        if (resumeId && (errMsg.includes('exited with code') || errMsg.includes('No conversation found'))) {
           logger.warn('Claude query failed with resume, retrying without resume:', errMsg)
           if (stderrOutput) logger.warn('stderr:', stderrOutput)
           session.sdkSessionId = undefined

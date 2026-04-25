@@ -61,7 +61,7 @@ export const PROXIED_EVENTS = new Set([
   'claude:message', 'claude:tool-use', 'claude:tool-result',
   'claude:stream', 'claude:result', 'claude:turn-end', 'claude:error',
   'claude:status', 'claude:permission-request', 'claude:permission-resolved', 'claude:ask-user', 'claude:ask-user-resolved',
-  'claude:modeChange', 'claude:history', 'claude:prompt-suggestion', 'claude:session-reset', 'claude:worktree-info', 'claude:rate-limit',
+  'claude:modeChange', 'claude:history', 'claude:resume-loading', 'claude:prompt-suggestion', 'claude:session-reset', 'claude:worktree-info', 'claude:rate-limit',
   'fs:changed',
   'workspace:detached', 'workspace:reattached', 'workspace:reload',
   'system:resume',
