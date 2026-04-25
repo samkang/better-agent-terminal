@@ -96,6 +96,11 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   // Get current platform for filtering shell options
   const platform = window.electronAPI?.platform || 'darwin'
   const platformShellOptions = SHELL_OPTIONS.filter(opt => opt.platforms.includes(platform))
+  const isDebugMode = window.electronAPI?.debug?.isDebugMode === true
+  const visibleAgentPresets = getVisiblePresets().filter(p => p.id !== 'none')
+  const defaultAgentValue = visibleAgentPresets.some(p => p.id === settings.defaultAgent)
+    ? settings.defaultAgent
+    : 'claude-code'
 
   useEffect(() => {
     return settingsStore.subscribe(() => {
@@ -104,8 +109,9 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   }, [])
 
   useEffect(() => {
+    if (!isDebugMode) return
     window.electronAPI.openai?.getApiKeyStatus().then(setOpenaiKeyStatus).catch(() => { /* ignore */ })
-  }, [])
+  }, [isDebugMode])
 
   // Check font availability on mount
   useEffect(() => {
@@ -560,10 +566,10 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                     <div className="settings-group">
                       <label>{t('settings.defaultAgent')}</label>
                       <select
-                        value={settings.defaultAgent || 'claude-code'}
+                        value={defaultAgentValue}
                         onChange={e => settingsStore.setDefaultAgent(e.target.value as AgentPresetId)}
                       >
-                        {getVisiblePresets().filter(p => p.id !== 'none').map(preset => (
+                        {visibleAgentPresets.map(preset => (
                           <option key={preset.id} value={preset.id}>{preset.icon} {preset.name}</option>
                         ))}
                       </select>
@@ -583,52 +589,54 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 )}
               </div>
 
-              <div className="settings-section">
-                <h3>OpenAI (Direct) API Key</h3>
-                <p className="settings-hint">Stored locally, encrypted with OS keychain via Electron safeStorage. Used by the "OpenAI (Direct)" agent preset.</p>
-                <div className="settings-group">
-                  <label>Status: {openaiKeyStatus.hasKey ? '✅ key configured' : '❌ no key'}</label>
-                  <input
-                    type="password"
-                    value={openaiKeyInput}
-                    onChange={e => setOpenaiKeyInput(e.target.value)}
-                    placeholder="sk-..."
-                    autoComplete="off"
-                  />
-                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                    <button
-                      className="settings-btn"
-                      disabled={!openaiKeyInput.trim() || openaiKeySaving}
-                      onClick={async () => {
-                        setOpenaiKeySaving(true)
-                        try {
-                          await window.electronAPI.openai.setApiKey(openaiKeyInput.trim())
-                          setOpenaiKeyInput('')
-                          const s = await window.electronAPI.openai.getApiKeyStatus()
-                          setOpenaiKeyStatus(s)
-                        } finally {
-                          setOpenaiKeySaving(false)
-                        }
-                      }}
-                    >
-                      {openaiKeySaving ? 'Saving…' : 'Save Key'}
-                    </button>
-                    {openaiKeyStatus.hasKey && (
+              {isDebugMode && (
+                <div className="settings-section">
+                  <h3>OpenAI (Direct) API Key</h3>
+                  <p className="settings-hint">Stored locally, encrypted with OS keychain via Electron safeStorage. Used by the "OpenAI (Direct)" agent preset.</p>
+                  <div className="settings-group">
+                    <label>Status: {openaiKeyStatus.hasKey ? '✅ key configured' : '❌ no key'}</label>
+                    <input
+                      type="password"
+                      value={openaiKeyInput}
+                      onChange={e => setOpenaiKeyInput(e.target.value)}
+                      placeholder="sk-..."
+                      autoComplete="off"
+                    />
+                    <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                       <button
-                        className="settings-btn settings-btn-danger"
+                        className="settings-btn"
+                        disabled={!openaiKeyInput.trim() || openaiKeySaving}
                         onClick={async () => {
-                          if (!confirm('Clear saved OpenAI API key?')) return
-                          await window.electronAPI.openai.clearApiKey()
-                          const s = await window.electronAPI.openai.getApiKeyStatus()
-                          setOpenaiKeyStatus(s)
+                          setOpenaiKeySaving(true)
+                          try {
+                            await window.electronAPI.openai.setApiKey(openaiKeyInput.trim())
+                            setOpenaiKeyInput('')
+                            const s = await window.electronAPI.openai.getApiKeyStatus()
+                            setOpenaiKeyStatus(s)
+                          } finally {
+                            setOpenaiKeySaving(false)
+                          }
                         }}
                       >
-                        Clear
+                        {openaiKeySaving ? 'Saving…' : 'Save Key'}
                       </button>
-                    )}
+                      {openaiKeyStatus.hasKey && (
+                        <button
+                          className="settings-btn settings-btn-danger"
+                          onClick={async () => {
+                            if (!confirm('Clear saved OpenAI API key?')) return
+                            await window.electronAPI.openai.clearApiKey()
+                            const s = await window.electronAPI.openai.getApiKeyStatus()
+                            setOpenaiKeyStatus(s)
+                          }}
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
               <div className="settings-section">
                 <h3>{t('settings.modelAndEffort')}</h3>
