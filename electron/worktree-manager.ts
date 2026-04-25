@@ -51,6 +51,10 @@ export class WorktreeManager {
     }
   }
 
+  async getBranchName(cwd: string): Promise<string> {
+    return this.getCurrentBranch(cwd)
+  }
+
   /**
    * Create a git worktree for a session.
    */

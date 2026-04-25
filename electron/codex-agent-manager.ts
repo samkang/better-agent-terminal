@@ -238,21 +238,26 @@ export class CodexAgentManager {
 
     if (options.useWorktree) {
       try {
+        const sourceCwd = this.isManagedWorktreePath(options.cwd)
+          ? this.hostRootFromWorktreePath(options.cwd) || this.hostRootFromWorktreePath(options.worktreePath) || options.cwd
+          : options.cwd
         const cwdAsWorktreePath = this.isManagedWorktreePath(options.cwd) ? options.cwd : undefined
         const preferredWorktreePath = options.worktreePath || cwdAsWorktreePath
-        const existingWorktreePath = preferredWorktreePath && existsSync(preferredWorktreePath)
-          ? preferredWorktreePath
+        const expectedWorktreePath = !preferredWorktreePath && sourceCwd && existsSync(sourceCwd)
+          ? path.join(sourceCwd, WORKTREE_DIR_NAME, sessionId.slice(0, 8))
           : undefined
-        const sourceCwd = this.isManagedWorktreePath(options.cwd)
-          ? this.hostRootFromWorktreePath(options.cwd) || this.hostRootFromWorktreePath(preferredWorktreePath) || options.cwd
-          : options.cwd
+        const existingWorktreePath = [preferredWorktreePath, cwdAsWorktreePath, expectedWorktreePath]
+          .find(candidate => !!candidate && existsSync(candidate))
 
         if (existingWorktreePath) {
+          const branchName = options.worktreeBranch
+            || await worktreeManager.getBranchName(existingWorktreePath)
+            || `bat/worktree-${sessionId.slice(0, 8)}`
           worktreeInfo = worktreeManager.rehydrate(
             sessionId,
             sourceCwd,
             existingWorktreePath,
-            options.worktreeBranch || `bat/worktree-${sessionId.slice(0, 8)}`
+            branchName
           )
           await worktreeManager.resolveSourceBranch(sessionId)
           effectiveCwd = existingWorktreePath
