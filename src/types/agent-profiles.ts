@@ -52,7 +52,7 @@ function getCodexAgentParamDefinitions(): AgentParamDefinition[] {
 }
 
 function getAgentParamDefinitions(agentPreset?: AgentPresetId | null): AgentParamDefinition[] {
-  if (agentPreset === 'codex-agent') return getCodexAgentParamDefinitions()
+  if (agentPreset === 'codex-agent' || agentPreset === 'codex-agent-worktree') return getCodexAgentParamDefinitions()
   return []
 }
 

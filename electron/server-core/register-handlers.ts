@@ -220,7 +220,7 @@ export function registerProxiedHandlers(deps: ProxiedHandlersDeps): void {
 
   // Claude Agent SDK
   registerHandler('claude:start-session', (_ctx, sessionId: string, options: { cwd: string; prompt?: string; permissionMode?: string; model?: string; effort?: string; apiVersion?: 'v1' | 'v2'; useWorktree?: boolean; worktreePath?: string; worktreeBranch?: string; autoCompactWindow?: number; agentPreset?: string; codexSandboxMode?: string; codexApprovalPolicy?: string }) => {
-    if (options.agentPreset === 'codex-agent') {
+    if (options.agentPreset === 'codex-agent' || options.agentPreset === 'codex-agent-worktree') {
       sessionManagerMap.set(sessionId, 'codex')
       return getCodexManager()?.startSession(sessionId, options)
     }
@@ -422,7 +422,7 @@ export function registerProxiedHandlers(deps: ProxiedHandlersDeps): void {
   registerHandler('openai:compact-now', (_ctx, sessionId: string) => getOpenAIManager()?.compactNow(sessionId) ?? false)
   registerHandler('claude:resume-session', (_ctx, sessionId: string, sdkSessionId: string, cwd: string, model?: string, apiVersion?: 'v1' | 'v2', useWorktree?: boolean, worktreePath?: string, worktreeBranch?: string, agentPreset?: string, codexSandboxMode?: 'read-only' | 'workspace-write' | 'danger-full-access', codexApprovalPolicy?: 'untrusted' | 'on-request' | 'never', permissionMode?: string, effort?: string) => {
     const explicitType: 'claude' | 'codex' | 'openai' =
-      agentPreset === 'codex-agent' ? 'codex' :
+      (agentPreset === 'codex-agent' || agentPreset === 'codex-agent-worktree') ? 'codex' :
       agentPreset === 'openai-agent' ? 'openai' : 'claude'
     const type = agentPreset ? explicitType : (sessionManagerMap.get(sessionId) || 'claude')
     sessionManagerMap.set(sessionId, type)
