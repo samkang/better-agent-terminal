@@ -552,7 +552,12 @@ class WorkspaceStore {
   getWindowId(): string | null { return this.windowId }
 
   listenForReload(): () => void {
-    return window.electronAPI.workspace.onReload(() => {
+    return window.electronAPI.workspace.onReload((data?: string) => {
+      if (data) {
+        this.applySerializedData(data)
+        this.save()
+        return
+      }
       this.load()
     })
   }
@@ -604,60 +609,64 @@ class WorkspaceStore {
   async load(): Promise<void> {
     const data = await window.electronAPI.workspace.load()
     if (data) {
-      try {
-        const parsed = JSON.parse(data)
-        // Restore terminals with empty runtime fields
-        const workspaces: Workspace[] = parsed.workspaces || []
-        const workspaceMap = new Map(workspaces.map((w: Workspace) => [w.id, w]))
-        const terminals = (parsed.terminals || []).map((t: Partial<TerminalInstance>): TerminalInstance | null => {
-          const ws = t.workspaceId ? workspaceMap.get(t.workspaceId) : undefined
-          if (!ws?.folderPath) {
-            window.electronAPI?.debug?.log?.(`[workspace-store] Warning: terminal ${t.id} has no valid workspace, skipping`)
-            return null
-          }
-          const cwd = ws.folderPath
-          // For agent terminals, always derive title from preset to fix any persisted corruption
-          const presetTitle = t.agentPreset && t.agentPreset !== 'none'
-            ? (getAgentPreset(t.agentPreset)?.name || t.title || 'Terminal')
-            : (t.title || 'Terminal')
-          return {
-            id: t.id || '',
-            workspaceId: t.workspaceId || '',
-            type: 'terminal' as const,
-            agentPreset: t.agentPreset,
-            title: presetTitle,
-            alias: t.alias,
-            cwd,
-            sdkSessionId: t.sdkSessionId,
-            model: t.model,
-            agentParams: normalizeAgentParams(t.agentPreset, t.agentParams),
-            sessionMeta: t.sessionMeta,
-            procfilePath: t.procfilePath,
-            scrollbackBuffer: [],
-            pid: undefined,
-          }
-        }).filter((t: TerminalInstance | null): t is TerminalInstance => t !== null)
-        // Restore last focused terminal for the active workspace
-        const activeWs = workspaces.find((w: Workspace) => w.id === parsed.activeWorkspaceId)
-        const savedFocusId = activeWs?.focusedTerminalId
-        const restoredFocus = savedFocusId && terminals.find(
-          (t: TerminalInstance) => t.id === savedFocusId && t.workspaceId === parsed.activeWorkspaceId
-        ) ? savedFocusId : null
+      this.applySerializedData(data)
+    }
+  }
 
-        this.state = {
-          ...this.state,
-          workspaces,
-          activeWorkspaceId: parsed.activeWorkspaceId || null,
-          terminals,
-          activeTerminalId: parsed.activeTerminalId || null,
-          focusedTerminalId: restoredFocus,
+  private applySerializedData(data: string): void {
+    try {
+      const parsed = JSON.parse(data)
+      // Restore terminals with empty runtime fields
+      const workspaces: Workspace[] = parsed.workspaces || []
+      const workspaceMap = new Map(workspaces.map((w: Workspace) => [w.id, w]))
+      const terminals = (parsed.terminals || []).map((t: Partial<TerminalInstance>): TerminalInstance | null => {
+        const ws = t.workspaceId ? workspaceMap.get(t.workspaceId) : undefined
+        if (!ws?.folderPath) {
+          window.electronAPI?.debug?.log?.(`[workspace-store] Warning: terminal ${t.id} has no valid workspace, skipping`)
+          return null
         }
-        this.activeGroup = parsed.activeGroup || null
-        this.notify()
-      } catch (e) {
-        window.electronAPI?.debug?.log?.(`Failed to parse workspace data: ${e}`)
-        console.error('Failed to parse workspace data:', e)
+        const cwd = ws.folderPath
+        // For agent terminals, always derive title from preset to fix any persisted corruption
+        const presetTitle = t.agentPreset && t.agentPreset !== 'none'
+          ? (getAgentPreset(t.agentPreset)?.name || t.title || 'Terminal')
+          : (t.title || 'Terminal')
+        return {
+          id: t.id || '',
+          workspaceId: t.workspaceId || '',
+          type: 'terminal' as const,
+          agentPreset: t.agentPreset,
+          title: presetTitle,
+          alias: t.alias,
+          cwd,
+          sdkSessionId: t.sdkSessionId,
+          model: t.model,
+          agentParams: normalizeAgentParams(t.agentPreset, t.agentParams),
+          sessionMeta: t.sessionMeta,
+          procfilePath: t.procfilePath,
+          scrollbackBuffer: [],
+          pid: undefined,
+        }
+      }).filter((t: TerminalInstance | null): t is TerminalInstance => t !== null)
+      // Restore last focused terminal for the active workspace
+      const activeWs = workspaces.find((w: Workspace) => w.id === parsed.activeWorkspaceId)
+      const savedFocusId = activeWs?.focusedTerminalId
+      const restoredFocus = savedFocusId && terminals.find(
+        (t: TerminalInstance) => t.id === savedFocusId && t.workspaceId === parsed.activeWorkspaceId
+      ) ? savedFocusId : null
+
+      this.state = {
+        ...this.state,
+        workspaces,
+        activeWorkspaceId: parsed.activeWorkspaceId || null,
+        terminals,
+        activeTerminalId: parsed.activeTerminalId || null,
+        focusedTerminalId: restoredFocus,
       }
+      this.activeGroup = parsed.activeGroup || null
+      this.notify()
+    } catch (e) {
+      window.electronAPI?.debug?.log?.(`Failed to parse workspace data: ${e}`)
+      console.error('Failed to parse workspace data:', e)
     }
   }
 }

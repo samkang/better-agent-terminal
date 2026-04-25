@@ -98,6 +98,13 @@ export function registerProxiedHandlers(deps: ProxiedHandlersDeps): void {
     if (entry.profileId) {
       profileManager.save(entry.profileId).catch(() => { /* ignore */ })
     }
+    broadcastHub.broadcast('workspace:reload', JSON.stringify({
+      workspaces: entry.workspaces,
+      activeWorkspaceId: entry.activeWorkspaceId,
+      activeGroup: entry.activeGroup,
+      terminals: entry.terminals,
+      activeTerminalId: entry.activeTerminalId,
+    }))
     return true
   })
   registerHandler('workspace:load', async (ctx) => {

@@ -124,9 +124,15 @@ export default function App() {
     return () => { clearInterval(interval); window.removeEventListener('claude-account-switched', onAccountSwitch) }
   }, [])
   useEffect(() => {
-    const authSuffix = authInfo?.email ? ` ( ${authInfo.email} / ${authInfo.subscriptionType || 'unknown'} )` : ''
-    document.title = `Better Agent Terminal - ${activeProfileName}:${windowIndex}${authSuffix}`
-  }, [activeProfileName, windowIndex, authInfo])
+    const profileTitle = /:\d+$/.test(activeProfileName)
+      ? activeProfileName
+      : `${activeProfileName}:${windowIndex}`
+    const profilePart = `${profileTitle}${isRemoteConnected ? ' (Remote)' : ''}`
+    const titleParts = [profilePart]
+    if (authInfo?.email) titleParts.push(`(${authInfo.email} / ${authInfo.subscriptionType || 'unknown'})`)
+    titleParts.push('Better Agent Terminal')
+    document.title = titleParts.join(' | ')
+  }, [activeProfileName, windowIndex, isRemoteConnected, authInfo])
 
   // Lazy mount: only render a workspace's terminals once it has been activated
   useEffect(() => {
