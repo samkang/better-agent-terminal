@@ -12,99 +12,9 @@ import type { AgentPresetId } from '../types/agent-presets'
 import { LinkedText, FilePreviewModal } from './PathLinker'
 import { renderChatMarkdown, openChatMarkdownLink } from '../utils/chat-markdown'
 import { extractInterruptedContinuation } from '../utils/interrupted-prompt'
-
-interface SessionMeta {
-  model?: string
-  sdkSessionId?: string
-  cwd?: string
-  totalCost: number
-  inputTokens: number
-  outputTokens: number
-  durationMs: number
-  numTurns: number
-  contextWindow: number
-  maxOutputTokens: number
-  contextTokens: number
-  cacheReadTokens: number
-  cacheCreationTokens: number
-  callCacheRead: number
-  callCacheWrite: number
-  lastQueryCalls: number
-  permissionMode?: string
-  modelUsage?: Record<string, { inputTokens: number; outputTokens: number; cacheReadInputTokens: number; cacheCreationInputTokens: number; costUSD: number }>
-  cacheWrite5mTokens?: number
-  cacheWrite1hTokens?: number
-}
-
-interface ModelInfo {
-  value: string
-  displayName: string
-  description: string
-  source?: 'builtin' | 'sdk'
-}
-
-interface PendingPermission {
-  toolUseId: string
-  toolName: string
-  input: Record<string, unknown>
-  suggestions?: unknown[]
-  decisionReason?: string
-}
-
-interface SlashCommandInfo {
-  name: string
-  description: string
-  argumentHint: string
-}
-
-interface AskUserQuestion {
-  question: string
-  header: string
-  options: Array<{ label: string; description: string; markdown?: string }>
-  multiSelect: boolean
-}
-
-interface PendingAskUser {
-  toolUseId: string
-  questions: AskUserQuestion[]
-}
-
-interface SessionSummary {
-  sdkSessionId: string
-  timestamp: number
-  preview: string
-  messageCount: number
-  customTitle?: string
-  firstPrompt?: string
-  gitBranch?: string
-  createdAt?: number
-  summary?: string
-}
-
-export interface CodexAgentPanelProps {
-  sessionId: string
-  cwd: string
-  isActive: boolean
-  workspaceId?: string
-  onClose?: (id: string) => void
-  showUserMsg?: boolean
-  showAssistantMsg?: boolean
-  showToolMsg?: boolean
-  showThinkingMsg?: boolean
-  isRemoteConnected?: boolean
-}
-
-interface AttachedImage {
-  path: string
-  dataUrl: string
-}
-
-interface AttachedFile {
-  path: string
-  name: string
-}
-
-type MessageItem = ClaudeMessage | ClaudeToolCall
+import { firstMeaningfulLine, formatContentSize, formatElapsed, formatFullTimestamp, formatTimestamp, parseContentBlocks, shouldShowTimeDivider, splitSystemReminders, toolDescription, toolInputContent, toolInputSummary, truncateMiddle } from './CodexAgentPanel.helpers'
+import type { AttachedFile, AttachedImage, CodexAgentPanelProps, MessageItem, ModelInfo, PendingAskUser, PendingPermission, SessionMeta, SessionSummary, SlashCommandInfo } from './CodexAgentPanel.types'
+import { CodexTodoChecklist } from './CodexTodoChecklist'
 
 // Track sessions that have been started to prevent duplicate calls across StrictMode remounts
 const startedSessions = new Set<string>()
@@ -2352,53 +2262,6 @@ export function CodexAgentPanel({ sessionId, cwd, isActive, workspaceId, onClose
     })
   }, [])
 
-  const toolInputSummary = (_toolName: string, input: Record<string, unknown>): string => {
-    // Show a compact one-line summary of tool input
-    if (input.command) return String(input.command).slice(0, 80)
-    if (input.file_path) return String(input.file_path)
-    if (input.pattern) return String(input.pattern)
-    if (input.query) return String(input.query).slice(0, 80)
-    if (input.url) return String(input.url).slice(0, 80)
-    if (input.prompt) return String(input.prompt).slice(0, 80)
-    const keys = Object.keys(input)
-    if (keys.length === 0) return ''
-    return keys.slice(0, 2).map(k => `${k}: ${String(input[k]).slice(0, 40)}`).join(', ')
-  }
-
-  const truncateMiddle = (text: string, max = 220): string => {
-    if (text.length <= max) return text
-    const head = Math.max(20, Math.floor(max * 0.65))
-    const tail = Math.max(10, max - head - 3)
-    return `${text.slice(0, head)}...${text.slice(-tail)}`
-  }
-
-  const firstMeaningfulLine = (text: string): string => {
-    return text.split(/\r?\n/).find(line => line.trim().length > 0)?.trim() || ''
-  }
-
-  const formatContentSize = (text: string): string => {
-    const lines = text ? text.split(/\r?\n/).length : 0
-    const chars = text.length
-    if (lines <= 1) return `${chars.toLocaleString()} chars`
-    return `${lines.toLocaleString()} lines · ${chars.toLocaleString()} chars`
-  }
-
-  // Extract main content string for the IN block display
-  const toolInputContent = (input: Record<string, unknown>): string => {
-    if (input.command) return String(input.command)
-    if (input.file_path) return String(input.file_path)
-    if (input.pattern) return String(input.pattern)
-    if (input.query) return String(input.query)
-    if (input.url) return String(input.url)
-    if (input.prompt) return String(input.prompt)
-    return JSON.stringify(input, null, 2)
-  }
-
-  const toolDescription = (input: Record<string, unknown>): string | null => {
-    if (input.description) return String(input.description)
-    return null
-  }
-
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const handleCopyBlock = useCallback((text: string, blockId: string) => {
     navigator.clipboard.writeText(text).then(() => {
@@ -2406,102 +2269,6 @@ export function CodexAgentPanel({ sessionId, cwd, isActive, workspaceId, onClose
       setTimeout(() => setCopiedId(null), 1500)
     })
   }, [])
-
-  // Extract <system-reminder> and <tool_use_error> blocks from text
-  const splitSystemReminders = (text: string): { content: string; reminders: string[]; errors: string[] } => {
-    const reminders: string[] = []
-    const errors: string[] = []
-    let content = text.replace(/<system-reminder>\s*([\s\S]*?)\s*<\/system-reminder>/g, (_match, inner) => {
-      reminders.push(inner.trim())
-      return ''
-    })
-    content = content.replace(/<tool_use_error>\s*([\s\S]*?)\s*<\/tool_use_error>/g, (_match, inner) => {
-      errors.push(inner.trim())
-      return ''
-    }).trim()
-    return { content, reminders, errors }
-  }
-
-  const parseContentBlocks = (text: string): string => {
-    const trimmed = text.trim()
-    if (!trimmed.startsWith('[') && !trimmed.startsWith('{')) return text
-    try {
-      const parsed = JSON.parse(trimmed)
-      const extractTextBlocks = (value: unknown): string | null => {
-        if (Array.isArray(value)) {
-          const texts = value
-            .filter((b: { type?: string; text?: string }) => b && b.type === 'text' && typeof b.text === 'string')
-            .map((b: { text: string }) => b.text)
-          return texts.length > 0 ? texts.join('\n\n') : null
-        }
-        if (value && typeof value === 'object') {
-          const record = value as Record<string, unknown>
-          if (record.content !== undefined) return extractTextBlocks(record.content)
-          if (typeof record.text === 'string') return record.text
-          const entries = Object.entries(record)
-          if (entries.length > 0 && entries.every(([, v]) => typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' || v == null)) {
-            return entries.map(([key, v]) => `${key}:\n${String(v ?? '')}`).join('\n\n')
-          }
-        }
-        return null
-      }
-      const extracted = extractTextBlocks(parsed)
-      if (!extracted) return text
-      const reparsed = extracted.trim().startsWith('{') || extracted.trim().startsWith('[')
-        ? parseContentBlocks(extracted)
-        : extracted
-      return reparsed
-    } catch {
-      return text
-    }
-  }
-
-  const renderTodoChecklist = (input: Record<string, unknown>) => {
-    const todos = input.todos as Array<{ content: string; status: string; activeForm?: string }> | undefined
-    if (!todos || !Array.isArray(todos)) return null
-    return (
-      <div className="claude-todo-checklist">
-        {todos.map((todo, i) => (
-          <div key={i} className={`claude-todo-item claude-todo-${todo.status}`}>
-            <span className="claude-todo-check">
-              {todo.status === 'completed' ? '\u2611' : todo.status === 'in_progress' ? '\u25B6' : '\u2610'}
-            </span>
-            <span className="claude-todo-text">{todo.content}</span>
-          </div>
-        ))}
-      </div>
-    )
-  }
-
-  const formatTimestamp = (ts: number): string => {
-    const d = new Date(ts)
-    const now = new Date()
-    const isToday = d.toDateString() === now.toDateString()
-    const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    if (isToday) return time
-    // Not today — show full date + time
-    return d.toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
-  }
-
-  const formatFullTimestamp = (ts: number): string => {
-    return new Date(ts).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
-  }
-
-  const formatElapsed = (ts: number): string => {
-    const secs = Math.floor((Date.now() - ts) / 1000)
-    const m = Math.floor(secs / 60)
-    const s = secs % 60
-    return `${m}:${String(s).padStart(2, '0')}`
-  }
-
-  const shouldShowTimeDivider = (current: MessageItem, prevItem: MessageItem | undefined): boolean => {
-    if (!prevItem) return false
-    const curTs = current.timestamp || 0
-    const prevTs = prevItem.timestamp || 0
-    if (!curTs || !prevTs) return false
-    // Show divider if gap > 30 minutes
-    return (curTs - prevTs) > 30 * 60 * 1000
-  }
 
   const renderMessage = (item: MessageItem, index: number) => {
     if (isToolCall(item) && !showToolMsg) return null
@@ -2520,7 +2287,7 @@ export function CodexAgentPanel({ sessionId, cwd, isActive, workspaceId, onClose
               <div className="claude-tool-header" onClick={() => toggleTool(item.id)}>
                 <span className="claude-tool-name">{t('claude.checklist')}</span>
               </div>
-              {renderTodoChecklist(item.input)}
+                  <CodexTodoChecklist input={item.input} />
             </div>
           </div>
         )

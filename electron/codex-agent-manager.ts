@@ -1,358 +1,21 @@
 import type { BrowserWindow } from 'electron'
-import { createRequire } from 'module'
-import { execSync } from 'child_process'
-import { createReadStream, existsSync, promises as fs } from 'fs'
-import os from 'os'
-import * as pathModule from 'path'
-import * as readline from 'readline'
+import { promises as fs } from 'fs'
 import type { ClaudeMessage, ClaudeToolCall, ClaudeSessionState } from '../src/types/claude-agent'
 import type { SessionSummary } from './claude-agent-manager'
-import type { CodexEffortLevel } from '../src/types'
-import { prepareImageForApi } from './image-utils'
 import { logger } from './logger'
 import { broadcastHub } from './remote/broadcast-hub'
 import { wrapInterruptedPrompt } from './agent-prompt-utils'
-import { getCachedDateHint, getCachedLogPath, setCachedLogPath } from './codex-agent/log-cache'
-
-type CodexSandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access'
-type CodexApprovalPolicy = 'untrusted' | 'on-request' | 'never'
-
-interface SessionMetadata {
-  model?: string
-  sdkSessionId?: string
-  cwd?: string
-  totalCost: number
-  inputTokens: number
-  outputTokens: number
-  durationMs: number
-  numTurns: number
-  contextWindow: number
-  maxOutputTokens: number
-  contextTokens: number
-  cacheReadTokens: number
-  cacheCreationTokens: number
-  callCacheRead: number
-  callCacheWrite: number
-  lastQueryCalls: number
-}
-
-interface QueuedMessage {
-  prompt: string
-  images?: string[]
-}
-
-interface CodexSessionInstance {
-  abortController: AbortController
-  state: ClaudeSessionState
-  threadId?: string
-  cwd: string
-  metadata: SessionMetadata
-  codexInstance?: unknown
-  thread?: unknown
-  sandboxMode: CodexSandboxMode
-  approvalPolicy: CodexApprovalPolicy
-  model?: string
-  effort: CodexEffortLevel
-  messageQueue: QueuedMessage[]
-  currentPrompt?: string
-  isResting?: boolean
-  isRunning?: boolean
-  startTime?: number
-  lastEventAt?: number
-}
-
-type HistoryItem = ClaudeMessage | ClaudeToolCall
-
-const CODEX_EFFORT_LEVELS: readonly CodexEffortLevel[] = ['minimal', 'low', 'medium', 'high', 'xhigh']
-
-// Lazy SDK import
-let CodexClass: unknown = null
-
-function getCodexInstallHint(): string {
-  if (process.platform === 'darwin') {
-    return 'brew install codex'
-  }
-  if (process.platform === 'win32') {
-    return 'winget install OpenAI.Codex (or npm i -g @openai/codex)'
-  }
-  return 'brew install codex (see https://github.com/openai/codex for other install options)'
-}
-
-async function getCodexClass(): Promise<unknown> {
-  if (!CodexClass) {
-    try {
-      const sdk = await import('@openai/codex-sdk')
-      CodexClass = (sdk as Record<string, unknown>).Codex || (sdk as Record<string, unknown>).default
-    } catch (err) {
-      logger.error('[codex] Failed to import @openai/codex-sdk:', err)
-      const cause = err instanceof Error ? err.message : String(err)
-      throw new Error(`Codex SDK not available: ${cause}`)
-    }
-  }
-  return CodexClass
-}
-
-// Resolve to the bundled Codex *native* binary. The top-level @openai/codex
-// wrapper ships a JS launcher (bin/codex.js) and bin/.bin/codex.cmd on Windows;
-// neither can be passed directly to child_process.spawn without a shell
-// (Node 20+ refuses to spawn .cmd/.bat implicitly, and .js needs `node`).
-// The native exe lives in the per-platform optionalDependency:
-//   @openai/codex-<platform>-<arch>/vendor/<triple>/codex/codex[.exe]
-function codexTargetTriple(): string | undefined {
-  const { platform, arch } = process
-  if (platform === 'linux' && arch === 'x64') return 'x86_64-unknown-linux-musl'
-  if (platform === 'linux' && arch === 'arm64') return 'aarch64-unknown-linux-musl'
-  if (platform === 'darwin' && arch === 'x64') return 'x86_64-apple-darwin'
-  if (platform === 'darwin' && arch === 'arm64') return 'aarch64-apple-darwin'
-  if (platform === 'win32' && arch === 'x64') return 'x86_64-pc-windows-msvc'
-  if (platform === 'win32' && arch === 'arm64') return 'aarch64-pc-windows-msvc'
-  return undefined
-}
-
-function findCodexOnPath(): string | undefined {
-  try {
-    const command = process.platform === 'win32'
-      ? 'where.exe codex'
-      : 'command -v codex || which codex'
-    const result = execSync(command, { encoding: 'utf-8', timeout: 3000 }).trim()
-    if (!result) return undefined
-    const candidates = result.split(/\r?\n/).map(s => s.trim()).filter(Boolean)
-    for (const candidate of candidates) {
-      // Skip npm shims: .cmd/.bat/.ps1 wrappers and the extension-less shell
-      // script under node_modules/.bin — none can be spawn'd directly.
-      if (/\.(cmd|bat|ps1)$/i.test(candidate)) continue
-      if (/[\\/]node_modules[\\/]\.bin[\\/]/i.test(candidate)) continue
-      // On Windows, require a real executable extension.
-      if (process.platform === 'win32' && !/\.exe$/i.test(candidate)) continue
-      return candidate
-    }
-    return undefined
-  } catch {
-    return undefined
-  }
-}
-
-function findBundledCodex(): string | undefined {
-  const exe = process.platform === 'win32' ? 'codex.exe' : 'codex'
-  const triple = codexTargetTriple()
-  if (!triple) return undefined
-  const platformPkg = `@openai/codex-${process.platform}-${process.arch}`
-  try {
-    const req = createRequire(import.meta.url ?? __filename)
-    let pkgJson = req.resolve(`${platformPkg}/package.json`)
-    if (pkgJson.includes('app.asar') && !pkgJson.includes('app.asar.unpacked')) {
-      pkgJson = pkgJson.replace('app.asar', 'app.asar.unpacked')
-    }
-    const candidate = pathModule.join(pathModule.dirname(pkgJson), 'vendor', triple, 'codex', exe)
-    if (existsSync(candidate)) return candidate
-  } catch {
-    // Platform package not installed — fall through.
-  }
-  return undefined
-}
-
-function findCodexBinary(): string | undefined {
-  // 1. Explicit override wins.
-  const override = process.env.BAT_CODEX_BIN
-  if (override && existsSync(override)) return override
-
-  // 2. Prefer user-installed codex on PATH — they may have a newer version than bundled
-  //    (e.g. to get gpt-5.5 before it lands in the @openai/codex-sdk bundle).
-  const onPath = findCodexOnPath()
-  if (onPath) return onPath
-
-  // 3. Fall back to the binary bundled with @openai/codex-sdk.
-  return findBundledCodex()
-}
-
-// gpt-5.5 currently requires ChatGPT login (not available via API key auth).
-export const DEFAULT_CODEX_MODEL = 'gpt-5.5'
-
-const CODEX_MODELS: Array<{ value: string; displayName: string; description: string }> = [
-  { value: 'gpt-5.5', displayName: 'GPT-5.5', description: 'Newest frontier · recommended (ChatGPT login)' },
-  { value: 'gpt-5.4', displayName: 'GPT-5.4', description: 'Flagship GPT-5.4' },
-  { value: 'gpt-5.4-mini', displayName: 'GPT-5.4 Mini', description: 'Fast GPT-5.4' },
-  { value: 'gpt-5.3-codex', displayName: 'GPT-5.3 Codex', description: 'GPT-5.3 · codex variant' },
-  { value: 'gpt-5.3-codex-spark', displayName: 'GPT-5.3 Codex Spark', description: 'GPT-5.3 · lightweight codex' },
-  { value: 'codex-mini-latest', displayName: 'Codex Mini', description: 'codex-mini · optimized for code' },
-  { value: 'o4-mini', displayName: 'o4-mini', description: 'OpenAI o4-mini · fast reasoning' },
-  { value: 'o3', displayName: 'o3', description: 'OpenAI o3 · reasoning model' },
-  { value: 'gpt-4.1', displayName: 'GPT-4.1', description: 'OpenAI GPT-4.1' },
-]
+import { findCodexBinary, getCodexInstallHint } from './codex-agent/binary'
+import { stringifyCodexError } from './codex-agent/errors'
+import { dataUrlToTempFile } from './codex-agent/image-attachments'
+import { CODEX_MODELS, DEFAULT_CODEX_MODEL, normalizeCodexEffort } from './codex-agent/models'
+import { buildToolCallFromResponseItem, resultFromResponseItemOutput } from './codex-agent/response-items'
+import { getCodexClass } from './codex-agent/sdk'
+import { listCodexSessionSummaries, loadSessionHistoryItems, readModelFromSessionLog } from './codex-agent/session-log'
+import { handleItemCompleted, handleItemStarted, handleItemUpdated, type CodexStreamItemSink, type CodexStreamItemState } from './codex-agent/stream-items'
+import type { CodexApprovalPolicy, CodexSandboxMode, CodexSessionInstance, HistoryItem, SessionMetadata } from './codex-agent/types'
 
 const sdkThreadIds = new Map<string, string>()
-
-// Save a data URL (data:image/png;base64,...) to a temp file with resize, returns absolute path or null.
-async function dataUrlToTempFile(dataUrl: string): Promise<string | null> {
-  const prepared = prepareImageForApi(dataUrl)
-  if (!prepared) return null
-  const ext = prepared.mimeType === 'image/png' ? 'png' : 'jpg'
-  const buf = Buffer.from(prepared.base64, 'base64')
-  const dir = pathModule.join(os.tmpdir(), 'bat-codex-images')
-  await fs.mkdir(dir, { recursive: true })
-  const filePath = pathModule.join(dir, `img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`)
-  await fs.writeFile(filePath, buf)
-  return filePath
-}
-
-function getCodexSessionsRoot(): string {
-  return pathModule.join(os.homedir(), '.codex', 'sessions')
-}
-
-async function listSubdirs(dir: string): Promise<string[]> {
-  const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => [])
-  return entries.filter(e => e.isDirectory()).map(e => e.name).sort((a, b) => b.localeCompare(a))
-}
-
-async function findMatchInDay(dayPath: string, threadId: string): Promise<string | null> {
-  const files = await fs.readdir(dayPath, { withFileTypes: true }).catch(() => [])
-  const match = files.find(entry => entry.isFile() && entry.name.includes(threadId) && entry.name.endsWith('.jsonl'))
-  return match ? pathModule.join(dayPath, match.name) : null
-}
-
-async function findSessionLogForThread(threadId: string): Promise<string | null> {
-  const cached = await getCachedLogPath(threadId)
-  if (cached) return cached
-
-  const root = getCodexSessionsRoot()
-  const hint = await getCachedDateHint(threadId)
-
-  // 1. Hint path: probe the previously-known date and the surrounding ±1 day window first.
-  if (hint?.year && hint?.month && hint?.day) {
-    const probe = pathModule.join(root, hint.year, hint.month, hint.day)
-    const direct = await findMatchInDay(probe, threadId)
-    if (direct) {
-      await setCachedLogPath(threadId, direct)
-      return direct
-    }
-  }
-
-  // 2. Full parallel walk: gather all year/month/day dirs in parallel, then search every day directory at once.
-  const years = await listSubdirs(root)
-  const monthsByYear = await Promise.all(years.map(async y => ({ y, months: await listSubdirs(pathModule.join(root, y)) })))
-  const dayPaths: string[] = []
-  await Promise.all(
-    monthsByYear.flatMap(({ y, months }) => months.map(async m => {
-      const monthPath = pathModule.join(root, y, m)
-      const days = await listSubdirs(monthPath)
-      for (const d of days) dayPaths.push(pathModule.join(monthPath, d))
-    }))
-  )
-  // Sort newest-first so the most likely candidate resolves quickly when parallelism finds multiple hits.
-  dayPaths.sort((a, b) => b.localeCompare(a))
-
-  const found = await new Promise<string | null>(resolve => {
-    let pending = dayPaths.length
-    let done = false
-    if (pending === 0) return resolve(null)
-    for (const dayPath of dayPaths) {
-      findMatchInDay(dayPath, threadId).then(match => {
-        if (done) return
-        if (match) {
-          done = true
-          resolve(match)
-          return
-        }
-        pending--
-        if (pending === 0 && !done) {
-          done = true
-          resolve(null)
-        }
-      }).catch(() => {
-        if (done) return
-        pending--
-        if (pending === 0 && !done) {
-          done = true
-          resolve(null)
-        }
-      })
-    }
-  })
-
-  if (found) await setCachedLogPath(threadId, found)
-  return found
-}
-
-async function* iterateJsonlLines(filePath: string): AsyncGenerator<string> {
-  const stream = createReadStream(filePath, { encoding: 'utf8' })
-  const rl = readline.createInterface({ input: stream, crlfDelay: Infinity })
-  try {
-    for await (const line of rl) {
-      if (line.trim()) yield line
-    }
-  } finally {
-    rl.close()
-    stream.destroy()
-  }
-}
-
-async function readModelFromSessionLog(threadId: string): Promise<string | undefined> {
-  const sessionLogPath = await findSessionLogForThread(threadId)
-  if (!sessionLogPath) return undefined
-
-  try {
-    for await (const line of iterateJsonlLines(sessionLogPath)) {
-      try {
-        const entry = JSON.parse(line) as {
-          type?: string
-          payload?: {
-            model?: string
-            collaboration_mode?: { settings?: { model?: string } }
-          }
-        }
-        if (entry.type === 'turn_context') {
-          const model = entry.payload?.model || entry.payload?.collaboration_mode?.settings?.model
-          if (model) return model
-        }
-      } catch {
-        // Ignore malformed log lines and keep scanning.
-      }
-    }
-  } catch {
-    // Stream errors fall through to undefined.
-  }
-
-  return undefined
-}
-
-function stringifyCodexError(error: unknown, fallback = 'Unknown error'): string {
-  if (!error) return fallback
-  if (typeof error === 'string') return annotateCodexError(error)
-  if (error instanceof Error) return annotateCodexError(error.message || fallback)
-  if (typeof error === 'object') {
-    const record = error as Record<string, unknown>
-    const nested = record.message ?? record.error ?? record.cause
-    if (typeof nested === 'string' && nested.trim()) return annotateCodexError(nested)
-    try {
-      return annotateCodexError(JSON.stringify(error))
-    } catch {
-      return annotateCodexError(String(error))
-    }
-  }
-  return annotateCodexError(String(error))
-}
-
-function annotateCodexError(message: string): string {
-  // Backend rejects an unknown / unauthorized model slug. Usually means the
-  // bundled codex CLI is older than the model the user selected — upgrading
-  // the CLI (or our SDK bundle) typically fixes it.
-  if (/The model `[^`]+` does not exist or you do not have access to it/i.test(message)) {
-    return `${message}\n\nHint: try upgrading codex CLI (npm i -g @openai/codex) — new models like gpt-5.5 need a recent CLI.`
-  }
-  return message
-}
-
-function parseTimestamp(value: unknown): number {
-  if (typeof value !== 'string') return Date.now()
-  const ts = Date.parse(value)
-  return Number.isNaN(ts) ? Date.now() : ts
-}
-
-function normalizeCodexEffort(value: unknown): CodexEffortLevel {
-  return typeof value === 'string' && CODEX_EFFORT_LEVELS.includes(value as CodexEffortLevel)
-    ? value as CodexEffortLevel
-    : 'high'
-}
 
 export class CodexAgentManager {
   private sessions: Map<string, CodexSessionInstance> = new Map()
@@ -453,142 +116,10 @@ export class CodexAgentManager {
     return session.state.messages.some(m => 'toolName' in m && m.id === toolId)
   }
 
-  private parseJsonRecord(value: unknown): Record<string, unknown> | undefined {
-    if (!value) return undefined
-    if (typeof value === 'object' && !Array.isArray(value)) return value as Record<string, unknown>
-    if (typeof value !== 'string') return undefined
-    const trimmed = value.trim()
-    if (!trimmed.startsWith('{')) return undefined
-    try {
-      const parsed = JSON.parse(trimmed)
-      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-        ? parsed as Record<string, unknown>
-        : undefined
-    } catch {
-      return undefined
-    }
-  }
-
-  private parseJsonValue(value: string): unknown {
-    const trimmed = value.trim()
-    if (!trimmed) return value
-    if (!['{', '[', '"'].includes(trimmed[0])) return value
-    try { return JSON.parse(trimmed) } catch { return value }
-  }
-
-  private textFromContentBlocks(value: unknown): string | undefined {
-    if (!value) return undefined
-    if (typeof value === 'string') return value
-    if (Array.isArray(value)) {
-      const texts = value
-        .map(item => {
-          const record = item && typeof item === 'object' ? item as Record<string, unknown> : undefined
-          if (record?.type === 'text' && typeof record.text === 'string') return record.text
-          if (typeof item === 'string') return item
-          return undefined
-        })
-        .filter((text): text is string => typeof text === 'string' && text.length > 0)
-      return texts.length > 0 ? texts.join('\n\n') : undefined
-    }
-    if (typeof value === 'object') {
-      const record = value as Record<string, unknown>
-      if (record.content !== undefined) return this.textFromContentBlocks(record.content)
-      if (typeof record.text === 'string') return record.text
-    }
-    return undefined
-  }
-
-  private formatObjectTextMap(value: unknown): string | undefined {
-    const parsed = typeof value === 'string' ? this.parseJsonValue(value) : value
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined
-    const entries = Object.entries(parsed as Record<string, unknown>)
-    if (entries.length === 0) return undefined
-    if (!entries.every(([, v]) => typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' || v == null)) return undefined
-    return entries.map(([key, v]) => `${key}:\n${String(v ?? '')}`).join('\n\n')
-  }
-
-  private normalizeToolResult(value: unknown): string {
-    const contentText = this.textFromContentBlocks(value)
-    if (contentText !== undefined) return this.formatObjectTextMap(contentText) ?? contentText
-    const objectText = this.formatObjectTextMap(value)
-    if (objectText !== undefined) return objectText
-    if (typeof value === 'string') return value
-    return JSON.stringify(value ?? '')
-  }
-
-  private parseFunctionArguments(payload: Record<string, unknown>): Record<string, unknown> {
-    const parsed = this.parseJsonRecord(payload.arguments ?? payload.input)
-    if (parsed) return parsed
-    if (typeof payload.input === 'string') return { input: payload.input }
-    if (typeof payload.arguments === 'string') return { input: payload.arguments }
-    return {}
-  }
-
-  private toolNameForResponseItem(name: string): string {
-    if (name === 'shell_command') return 'Bash'
-    if (name === 'apply_patch') return 'ApplyPatch'
-    if (name === 'update_plan') return 'TodoWrite'
-    if (name === 'view_image') return 'ViewImage'
-    return name || 'Tool'
-  }
-
-  private toolInputForResponseItem(name: string, args: Record<string, unknown>): Record<string, unknown> {
-    if (name === 'shell_command') {
-      return {
-        command: typeof args.command === 'string' ? args.command : String(args.input ?? ''),
-        ...(typeof args.workdir === 'string' ? { workdir: args.workdir } : {}),
-        ...(typeof args.timeout_ms === 'number' ? { timeoutMs: args.timeout_ms } : {}),
-      }
-    }
-    if (name === 'apply_patch') {
-      return { patch: typeof args.input === 'string' ? args.input : JSON.stringify(args, null, 2) }
-    }
-    if (name === 'update_plan') {
-      const plan = Array.isArray(args.plan) ? args.plan : []
-      return {
-        todos: plan.map(item => {
-          const record = item && typeof item === 'object' ? item as Record<string, unknown> : {}
-          return {
-            content: String(record.step ?? ''),
-            status: String(record.status ?? 'pending'),
-          }
-        }),
-      }
-    }
-    return args
-  }
-
-  private buildToolCallFromResponseItem(sessionId: string, payload: Record<string, unknown>, timestamp: number): ClaudeToolCall | null {
-    const callId = String(payload.call_id || payload.id || '')
-    const name = String(payload.name || '')
-    if (!callId || !name) return null
-    const args = this.parseFunctionArguments(payload)
-    return {
-      id: callId,
-      sessionId,
-      toolName: this.toolNameForResponseItem(name),
-      input: this.toolInputForResponseItem(name, args),
-      status: 'running',
-      timestamp,
-    }
-  }
-
-  private resultFromResponseItemOutput(payload: Record<string, unknown>): { result: string; status: 'completed' | 'error' } {
-    const rawOutput = typeof payload.output === 'string' ? payload.output : this.normalizeToolResult(payload.output)
-    const parsed = this.parseJsonRecord(rawOutput)
-    const outputText = parsed?.output !== undefined ? this.normalizeToolResult(parsed.output) : rawOutput
-    const metadata = parsed?.metadata && typeof parsed.metadata === 'object' ? parsed.metadata as Record<string, unknown> : undefined
-    const exitCode = typeof metadata?.exit_code === 'number'
-      ? metadata.exit_code
-      : /^Exit code:\s*(-?\d+)/m.exec(outputText)?.[1]
-    const status = exitCode !== undefined && Number(exitCode) !== 0 ? 'error' : 'completed'
-    return { result: outputText.slice(0, 8000), status }
-  }
-
   private handleResponseItemToolEvent(sessionId: string, payload: Record<string, unknown>, timestamp: number): void {
     const payloadType = payload.type
     if (payloadType === 'function_call' || payloadType === 'custom_tool_call') {
-      const toolCall = this.buildToolCallFromResponseItem(sessionId, payload, timestamp)
+      const toolCall = buildToolCallFromResponseItem(sessionId, payload, timestamp)
       if (!toolCall) return
       if (this.hasToolCall(sessionId, toolCall.id)) {
         this.updateToolCall(sessionId, toolCall.id, { input: toolCall.input })
@@ -611,7 +142,7 @@ export class CodexAgentManager {
           timestamp,
         })
       }
-      this.updateToolCall(sessionId, callId, this.resultFromResponseItemOutput(payload))
+      this.updateToolCall(sessionId, callId, resultFromResponseItemOutput(payload))
     }
   }
 
@@ -624,152 +155,15 @@ export class CodexAgentManager {
   }
 
   private async loadSessionHistory(sessionId: string, threadId: string): Promise<void> {
-    const startedAt = Date.now()
     this.send('claude:resume-loading', sessionId, true)
     try {
-      const sessionLogPath = await findSessionLogForThread(threadId)
+      const { items, sessionLogPath, durationMs } = await loadSessionHistoryItems(sessionId, threadId)
       if (!sessionLogPath) {
         logger.log(`[codex:${sessionId.slice(0, 8)}] No session log found for thread ${threadId.slice(0, 8)}`)
         this.replaceHistory(sessionId, [])
         return
       }
-
-      const items: HistoryItem[] = []
-      const toolIndexById = new Map<string, number>()
-
-      try {
-        for await (const line of iterateJsonlLines(sessionLogPath)) {
-          try {
-            const entry = JSON.parse(line) as {
-              timestamp?: string
-              type?: string
-              payload?: Record<string, unknown>
-            }
-            if (entry.type === 'response_item' && entry.payload) {
-              const ts = parseTimestamp(entry.timestamp)
-              const payloadType = entry.payload.type
-              if (payloadType === 'function_call' || payloadType === 'custom_tool_call') {
-                const toolCall = this.buildToolCallFromResponseItem(sessionId, entry.payload, ts)
-                if (toolCall) {
-                  const existingIndex = toolIndexById.get(toolCall.id)
-                  if (existingIndex !== undefined) {
-                    items[existingIndex] = { ...(items[existingIndex] as ClaudeToolCall), ...toolCall }
-                  } else {
-                    toolIndexById.set(toolCall.id, items.length)
-                    items.push(toolCall)
-                  }
-                }
-              } else if (payloadType === 'function_call_output' || payloadType === 'custom_tool_call_output') {
-                const callId = String(entry.payload.call_id || entry.payload.id || '')
-                if (callId) {
-                  const result = this.resultFromResponseItemOutput(entry.payload)
-                  const existingIndex = toolIndexById.get(callId)
-                  if (existingIndex !== undefined) {
-                    items[existingIndex] = { ...(items[existingIndex] as ClaudeToolCall), ...result }
-                  } else {
-                    toolIndexById.set(callId, items.length)
-                    items.push({
-                      id: callId,
-                      sessionId,
-                      toolName: 'Tool',
-                      input: {},
-                      status: result.status,
-                      result: result.result,
-                      timestamp: ts,
-                    })
-                  }
-                }
-              }
-              continue
-            }
-
-            if (entry.type !== 'event_msg' || !entry.payload) continue
-
-            const ts = parseTimestamp(entry.timestamp)
-            const eventType = entry.payload.type
-            if (typeof eventType !== 'string') continue
-
-            if (eventType === 'user_message') {
-              const message = entry.payload.message
-              if (typeof message === 'string' && message.trim()) {
-                items.push({
-                  id: `hist-user-${items.length}`,
-                  sessionId,
-                  role: 'user',
-                  content: message,
-                  timestamp: ts,
-                })
-              }
-              continue
-            }
-
-            if (eventType === 'agent_message') {
-              const message = entry.payload.message
-              if (typeof message === 'string' && message.trim()) {
-                items.push({
-                  id: `hist-assistant-${items.length}`,
-                  sessionId,
-                  role: 'assistant',
-                  content: message,
-                  timestamp: ts,
-                })
-              }
-              continue
-            }
-
-            if (eventType === 'exec_command_end') {
-              const toolId = String(entry.payload.call_id || `hist-bash-${items.length}`)
-              const cmd = Array.isArray(entry.payload.command)
-                ? entry.payload.command.map(part => String(part)).join(' ')
-                : ''
-              const aggregatedOutput = typeof entry.payload.aggregated_output === 'string'
-                ? entry.payload.aggregated_output
-                : ''
-              const stderr = typeof entry.payload.stderr === 'string' ? entry.payload.stderr : ''
-              const stdout = typeof entry.payload.stdout === 'string' ? entry.payload.stdout : ''
-              const result = aggregatedOutput || stdout || stderr
-              items.push({
-                id: toolId,
-                sessionId,
-                toolName: 'Bash',
-                input: { command: cmd },
-                status: entry.payload.exit_code === 0 ? 'completed' : 'error',
-                ...(result ? { result: result.slice(0, 4000) } : {}),
-                timestamp: ts,
-              })
-              toolIndexById.set(toolId, items.length - 1)
-              continue
-            }
-
-            if (eventType === 'patch_apply_end') {
-              const toolId = String(entry.payload.call_id || `hist-edit-${items.length}`)
-              const changes = entry.payload.changes
-              const changedFiles = changes && typeof changes === 'object'
-                ? Object.keys(changes as Record<string, unknown>)
-                : []
-              const stdout = typeof entry.payload.stdout === 'string' ? entry.payload.stdout : ''
-              const stderr = typeof entry.payload.stderr === 'string' ? entry.payload.stderr : ''
-              const summary = stdout || stderr || (changedFiles.length > 0 ? changedFiles.join('\n') : 'Patch applied')
-              items.push({
-                id: toolId,
-                sessionId,
-                toolName: 'Edit',
-                input: { files: changedFiles },
-                status: entry.payload.success === false ? 'error' : 'completed',
-                result: summary.slice(0, 4000),
-                timestamp: ts,
-              })
-              toolIndexById.set(toolId, items.length - 1)
-            }
-          } catch {
-            // Ignore malformed log lines and keep scanning.
-          }
-        }
-      } catch (err) {
-        logger.error(`[codex:${sessionId.slice(0, 8)}] Failed to stream session log:`, err)
-      }
-
-      logger.log(`[codex:${sessionId.slice(0, 8)}] Loaded ${items.length} history items from ${pathModule.basename(sessionLogPath)} in ${Date.now() - startedAt}ms`)
+      logger.log(`[codex:${sessionId.slice(0, 8)}] Loaded ${items.length} history items from ${sessionLogPath.split(/[\\/]/).pop()} in ${durationMs}ms`)
       this.replaceHistory(sessionId, items)
     } finally {
       this.send('claude:resume-loading', sessionId, false)
@@ -958,9 +352,19 @@ export class CodexAgentManager {
     }
 
     const turnStart = Date.now()
-    let currentAssistantText = ''
-    let currentThinkingText = ''
-    let currentItemId = ''
+    const itemState: CodexStreamItemState = {
+      currentAssistantText: '',
+      currentThinkingText: '',
+      currentItemId: '',
+    }
+    const itemSink: CodexStreamItemSink = {
+      addMessage: msg => this.addMessage(sessionId, msg),
+      addToolCall: tool => this.addToolCall(sessionId, tool),
+      updateToolCall: (toolId, updates) => this.updateToolCall(sessionId, toolId, updates),
+      hasToolCall: toolId => this.hasToolCall(sessionId, toolId),
+      sendStream: data => this.send('claude:stream', sessionId, data),
+      sendError: message => this.send('claude:error', sessionId, message),
+    }
     let sawTurnCompleted = false
     let idleTimedOut = false
     let idleTimer: ReturnType<typeof setTimeout> | undefined
@@ -1038,296 +442,19 @@ export class CodexAgentManager {
 
           case 'item.started': {
             const item = event.item as Record<string, unknown>
-            const itemType = item?.type as string
-            currentItemId = (item?.id as string) || `item-${Date.now()}`
-
-            if (itemType === 'agent_message') {
-              currentAssistantText = ''
-              currentThinkingText = ''
-            } else if (itemType === 'reasoning') {
-              // Reasoning/thinking block
-            } else if (itemType === 'command_execution') {
-              const command = (item?.command as string) || (item?.input as string) || ''
-              this.addToolCall(sessionId, {
-                id: currentItemId,
-                sessionId,
-                toolName: 'Bash',
-                input: { command },
-                status: 'running',
-                timestamp: Date.now(),
-              })
-            } else if (itemType === 'file_change') {
-              const changes = item?.changes as Array<Record<string, unknown>> | undefined
-              const filePath = changes?.[0]?.path as string || ''
-              this.addToolCall(sessionId, {
-                id: currentItemId,
-                sessionId,
-                toolName: 'Edit',
-                input: { file_path: filePath },
-                status: 'running',
-                timestamp: Date.now(),
-              })
-            } else if (itemType === 'mcp_tool_call') {
-              const server = (item?.server as string) || ''
-              const tool = (item?.tool as string) || 'MCP'
-              this.addToolCall(sessionId, {
-                id: currentItemId,
-                sessionId,
-                toolName: server ? `${server}/${tool}` : tool,
-                input: (item?.arguments as Record<string, unknown>) || {},
-                status: 'running',
-                timestamp: Date.now(),
-              })
-            } else if (itemType === 'web_search') {
-              this.addToolCall(sessionId, {
-                id: currentItemId,
-                sessionId,
-                toolName: 'WebSearch',
-                input: { query: (item?.query as string) || '' },
-                status: 'running',
-                timestamp: Date.now(),
-              })
-            } else if (itemType === 'todo_list') {
-              const items = item?.items as Array<Record<string, unknown>> | undefined
-              this.addToolCall(sessionId, {
-                id: currentItemId,
-                sessionId,
-                toolName: 'TodoWrite',
-                input: { todos: items || [] },
-                status: 'running',
-                timestamp: Date.now(),
-              })
-            }
+            handleItemStarted(sessionId, item, itemState, itemSink)
             break
           }
 
           case 'item.updated': {
             const item = event.item as Record<string, unknown>
-            const itemType = item?.type as string
-            const itemId = (item?.id as string) || currentItemId
-
-            if (itemType === 'agent_message') {
-              const text = (item?.text as string) || (item?.content as string) || ''
-              if (text && text.length > currentAssistantText.length) {
-                const delta = text.slice(currentAssistantText.length)
-                currentAssistantText = text
-                this.send('claude:stream', sessionId, { text: delta })
-              }
-            } else if (itemType === 'reasoning') {
-              const text = (item?.text as string) || (item?.content as string) || ''
-              if (text && text.length > currentThinkingText.length) {
-                const delta = text.slice(currentThinkingText.length)
-                currentThinkingText = text
-                this.send('claude:stream', sessionId, { thinking: delta })
-              }
-            } else if (itemType === 'command_execution') {
-              const command = (item?.command as string) || (item?.input as string) || ''
-              if (!this.hasToolCall(sessionId, itemId)) {
-                this.addToolCall(sessionId, {
-                  id: itemId,
-                  sessionId,
-                  toolName: 'Bash',
-                  input: { command },
-                  status: 'running',
-                  timestamp: Date.now(),
-                })
-              }
-              const output = (item?.aggregated_output as string) || (item?.output as string) || ''
-              const status = (item?.status as string) === 'failed'
-                ? 'error'
-                : (item?.status as string) === 'completed'
-                  ? 'completed'
-                  : 'running'
-              this.updateToolCall(sessionId, itemId, {
-                input: { command },
-                status: status as 'running' | 'completed' | 'error',
-                ...(output ? { result: output } : {}),
-              })
-            } else if (itemType === 'file_change') {
-              const changes = item?.changes as Array<Record<string, unknown>> | undefined
-              const filePath = (changes?.[0]?.path as string) || ''
-              if (!this.hasToolCall(sessionId, itemId)) {
-                this.addToolCall(sessionId, {
-                  id: itemId,
-                  sessionId,
-                  toolName: 'Edit',
-                  input: { file_path: filePath },
-                  status: 'running',
-                  timestamp: Date.now(),
-                })
-              }
-              this.updateToolCall(sessionId, itemId, {
-                input: { file_path: filePath },
-                status: (item?.status as string) === 'failed' ? 'error' : 'running',
-              })
-            } else if (itemType === 'mcp_tool_call') {
-              const server = (item?.server as string) || ''
-              const tool = (item?.tool as string) || 'MCP'
-              const displayName = server ? `${server}/${tool}` : tool
-              if (!this.hasToolCall(sessionId, itemId)) {
-                this.addToolCall(sessionId, {
-                  id: itemId,
-                  sessionId,
-                  toolName: displayName,
-                  input: (item?.arguments as Record<string, unknown>) || {},
-                  status: 'running',
-                  timestamp: Date.now(),
-                })
-              }
-              this.updateToolCall(sessionId, itemId, {
-                input: (item?.arguments as Record<string, unknown>) || {},
-                status: (item?.status as string) === 'failed' ? 'error' : 'running',
-              })
-            } else if (itemType === 'web_search') {
-              if (!this.hasToolCall(sessionId, itemId)) {
-                this.addToolCall(sessionId, {
-                  id: itemId,
-                  sessionId,
-                  toolName: 'WebSearch',
-                  input: { query: (item?.query as string) || '' },
-                  status: 'running',
-                  timestamp: Date.now(),
-                })
-              }
-              this.updateToolCall(sessionId, itemId, {
-                input: { query: (item?.query as string) || '' },
-                status: 'running',
-              })
-            } else if (itemType === 'todo_list') {
-              const items = item?.items as Array<Record<string, unknown>> | undefined
-              if (!this.hasToolCall(sessionId, itemId)) {
-                this.addToolCall(sessionId, {
-                  id: itemId,
-                  sessionId,
-                  toolName: 'TodoWrite',
-                  input: { todos: items || [] },
-                  status: 'running',
-                  timestamp: Date.now(),
-                })
-              }
-              this.updateToolCall(sessionId, itemId, {
-                input: { todos: items || [] },
-                status: 'running',
-              })
-            }
+            handleItemUpdated(sessionId, item, itemState, itemSink)
             break
           }
 
           case 'item.completed': {
             const item = event.item as Record<string, unknown>
-            const itemType = item?.type as string
-            const itemId = (item?.id as string) || currentItemId
-
-            if (itemType === 'agent_message') {
-              const text = (item?.text as string) || (item?.content as string) || currentAssistantText
-              this.addMessage(sessionId, {
-                id: `msg-${Date.now()}`,
-                sessionId,
-                role: 'assistant',
-                content: text,
-                thinking: currentThinkingText || undefined,
-                timestamp: Date.now(),
-              })
-              currentAssistantText = ''
-              currentThinkingText = ''
-            } else if (itemType === 'command_execution') {
-              const output = (item?.aggregated_output as string) || (item?.output as string) || (item?.result as string) || ''
-              const status = (item?.status as string) === 'failed' ? 'error' : 'completed'
-              const exitCode = typeof item?.exit_code === 'number' ? item.exit_code as number : undefined
-              if (!this.hasToolCall(sessionId, itemId)) {
-                this.addToolCall(sessionId, {
-                  id: itemId,
-                  sessionId,
-                  toolName: 'Bash',
-                  input: { command: (item?.command as string) || '' },
-                  status: 'running',
-                  timestamp: Date.now(),
-                })
-              }
-              const result = status === 'error' && exitCode !== undefined
-                ? `[exit ${exitCode}]\n${output}`
-                : output
-              this.updateToolCall(sessionId, itemId, {
-                status: status as 'completed' | 'error',
-                result,
-              })
-            } else if (itemType === 'file_change') {
-              const changes = item?.changes as Array<Record<string, unknown>> | undefined
-              const diff = changes?.map(c => c.diff || `${c.kind}: ${c.path}`).join('\n') || 'File changed'
-              const filePath = (changes?.[0]?.path as string) || ''
-              if (!this.hasToolCall(sessionId, itemId)) {
-                this.addToolCall(sessionId, {
-                  id: itemId,
-                  sessionId,
-                  toolName: 'Edit',
-                  input: { file_path: filePath },
-                  status: 'running',
-                  timestamp: Date.now(),
-                })
-              }
-              this.updateToolCall(sessionId, itemId, {
-                status: (item?.status as string) === 'failed' ? 'error' : 'completed',
-                result: diff as string,
-              })
-            } else if (itemType === 'mcp_tool_call') {
-              const status = (item?.status as string) === 'failed' ? 'error' : 'completed'
-              const server = (item?.server as string) || ''
-              const tool = (item?.tool as string) || 'MCP'
-              const displayName = server ? `${server}/${tool}` : tool
-              const errObj = item?.error as { message?: string } | undefined
-              const result = status === 'error'
-                ? (errObj?.message || JSON.stringify(item?.error ?? 'MCP call failed'))
-                : (item?.result !== undefined ? this.normalizeToolResult(item.result) : '')
-              if (!this.hasToolCall(sessionId, itemId)) {
-                this.addToolCall(sessionId, {
-                  id: itemId,
-                  sessionId,
-                  toolName: displayName,
-                  input: (item?.arguments as Record<string, unknown>) || {},
-                  status: 'running',
-                  timestamp: Date.now(),
-                })
-              }
-              this.updateToolCall(sessionId, itemId, {
-                status: status as 'completed' | 'error',
-                result,
-              })
-            } else if (itemType === 'web_search') {
-              if (!this.hasToolCall(sessionId, itemId)) {
-                this.addToolCall(sessionId, {
-                  id: itemId,
-                  sessionId,
-                  toolName: 'WebSearch',
-                  input: { query: (item?.query as string) || '' },
-                  status: 'running',
-                  timestamp: Date.now(),
-                })
-              }
-              this.updateToolCall(sessionId, itemId, {
-                status: 'completed',
-                result: 'Search completed',
-              })
-            } else if (itemType === 'todo_list') {
-              const items = item?.items as Array<Record<string, unknown>> | undefined
-              const summary = items?.map(t => `${t.completed ? '[x]' : '[ ]'} ${t.text || t.description || ''}`).join('\n') || 'Todo list updated'
-              if (!this.hasToolCall(sessionId, itemId)) {
-                this.addToolCall(sessionId, {
-                  id: itemId,
-                  sessionId,
-                  toolName: 'TodoWrite',
-                  input: { todos: items || [] },
-                  status: 'running',
-                  timestamp: Date.now(),
-                })
-              }
-              this.updateToolCall(sessionId, itemId, {
-                status: 'completed',
-                result: summary,
-              })
-            } else if (itemType === 'error') {
-              const errMsg = stringifyCodexError(item?.message ?? item?.error)
-              this.send('claude:error', sessionId, errMsg)
-            }
+            handleItemCompleted(sessionId, item, itemState, itemSink)
             break
           }
 
@@ -1348,13 +475,13 @@ export class CodexAgentManager {
               subtype: 'result',
               totalCost: session.metadata.totalCost,
               totalTokens: session.metadata.inputTokens + session.metadata.outputTokens,
-              result: currentAssistantText || undefined,
+              result: itemState.currentAssistantText || undefined,
             })
             this.send('claude:turn-end', sessionId, {
               reason: 'completed',
               totalCost: session.metadata.totalCost,
               totalTokens: session.metadata.inputTokens + session.metadata.outputTokens,
-              result: currentAssistantText || undefined,
+              result: itemState.currentAssistantText || undefined,
             })
             break
           }
@@ -1643,51 +770,7 @@ export class CodexAgentManager {
   resolveAskUser(_sessionId: string, _toolUseId: string, _answers: unknown): boolean { return false }
 
   async listSessions(_cwd: string): Promise<SessionSummary[]> {
-    const root = getCodexSessionsRoot()
-    const results: SessionSummary[] = []
-
-    const yearDirs = await fs.readdir(root, { withFileTypes: true }).catch(() => [])
-    for (const yearDir of yearDirs.filter(e => e.isDirectory())) {
-      const yearPath = pathModule.join(root, yearDir.name)
-      const monthDirs = await fs.readdir(yearPath, { withFileTypes: true }).catch(() => [])
-      for (const monthDir of monthDirs.filter(e => e.isDirectory())) {
-        const monthPath = pathModule.join(yearPath, monthDir.name)
-        const dayDirs = await fs.readdir(monthPath, { withFileTypes: true }).catch(() => [])
-        for (const dayDir of dayDirs.filter(e => e.isDirectory())) {
-          const dayPath = pathModule.join(monthPath, dayDir.name)
-          const files = await fs.readdir(dayPath, { withFileTypes: true }).catch(() => [])
-          for (const file of files.filter(e => e.isFile() && e.name.endsWith('.jsonl'))) {
-            const filePath = pathModule.join(dayPath, file.name)
-            const threadId = file.name.replace(/\.jsonl$/, '')
-            try {
-              const stat = await fs.stat(filePath)
-              const content = await fs.readFile(filePath, 'utf8').catch(() => '')
-              let preview = ''
-              for (const line of content.split('\n')) {
-                if (!line.trim()) continue
-                try {
-                  const entry = JSON.parse(line) as { type?: string; payload?: { input?: string; op?: { type?: string; content?: { type?: string; text?: string }[] } } }
-                  // Look for user input in the session log
-                  const input = entry.payload?.input || entry.payload?.op?.content?.find?.(c => c.type === 'input_text')?.text
-                  if (input && typeof input === 'string') {
-                    preview = input.split('\n')[0].slice(0, 120)
-                    break
-                  }
-                } catch { /* skip malformed lines */ }
-              }
-              results.push({
-                sdkSessionId: threadId,
-                timestamp: stat.mtimeMs,
-                preview: preview || `(${threadId.slice(0, 8)}...)`,
-                messageCount: 0,
-              })
-            } catch { /* skip unreadable files */ }
-          }
-        }
-      }
-    }
-
-    return results.sort((a, b) => b.timestamp - a.timestamp).slice(0, 50)
+    return listCodexSessionSummaries()
   }
 
   killAll(): void {
