@@ -385,6 +385,12 @@ export class CodexAgentManager {
     if (!session || !session.thread) return false
 
     const stag = `[codex:${sessionId.slice(0, 8)}]`
+    const hasImages = !!images?.length
+    prompt = prompt.trim()
+    if (!prompt && hasImages) {
+      prompt = 'Please analyze the attached image.'
+    }
+    if (!prompt && !hasImages) return false
 
     if (session.isRunning) {
       // Interrupt the running turn and proceed to start a fresh turn below.
