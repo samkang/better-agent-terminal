@@ -336,6 +336,11 @@ export function Sidebar({
           }
           if (e.dataTransfer.types.includes('Files')) {
             e.preventDefault()
+            if (isRemoteConnected) {
+              e.dataTransfer.dropEffect = 'none'
+              setExternalDragOver(false)
+              return
+            }
             e.dataTransfer.dropEffect = 'copy'
             setExternalDragOver(true)
           }
@@ -363,6 +368,12 @@ export function Sidebar({
             return
           }
           e.preventDefault()
+          if (isRemoteConnected && e.dataTransfer.types.includes('Files')) {
+            window.alert('Remote sessions can only add folders that exist on the host.')
+            setDragOverId(null)
+            setDragPosition(null)
+            return
+          }
           const files = Array.from(e.dataTransfer.files)
           let added = 0
           for (const file of files) {

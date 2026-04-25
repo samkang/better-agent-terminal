@@ -60,6 +60,8 @@ export class CodexAgentManager {
     session.abortController = new AbortController()
     session.isRunning = false
     session.state.isStreaming = false
+    session.state.streamingText = ''
+    session.state.streamingThinking = ''
     session.currentPrompt = undefined
     session.messageQueue = []
     return true
@@ -417,6 +419,8 @@ export class CodexAgentManager {
     session.isRunning = true
     session.currentPrompt = prompt
     session.state.isStreaming = true
+    session.state.streamingText = ''
+    session.state.streamingThinking = ''
     session.lastEventAt = Date.now()
     const ctrl = session.abortController
 
@@ -454,7 +458,14 @@ export class CodexAgentManager {
       addToolCall: tool => this.addToolCall(sessionId, tool),
       updateToolCall: (toolId, updates) => this.updateToolCall(sessionId, toolId, updates),
       hasToolCall: toolId => this.hasToolCall(sessionId, toolId),
-      sendStream: data => this.send('claude:stream', sessionId, data),
+      sendStream: data => {
+        const liveSession = this.sessions.get(sessionId)
+        if (liveSession) {
+          if (data.text) liveSession.state.streamingText = (liveSession.state.streamingText || '') + data.text
+          if (data.thinking) liveSession.state.streamingThinking = (liveSession.state.streamingThinking || '') + data.thinking
+        }
+        this.send('claude:stream', sessionId, data)
+      },
       sendError: message => this.send('claude:error', sessionId, message),
     }
     let sawTurnCompleted = false
@@ -626,6 +637,8 @@ export class CodexAgentManager {
         }
         session.isRunning = false
         session.state.isStreaming = false
+        session.state.streamingText = ''
+        session.state.streamingThinking = ''
         session.currentPrompt = undefined
 
         // Process queued messages
@@ -644,6 +657,8 @@ export class CodexAgentManager {
     if (!session) return false
     session.abortController.abort()
     session.state.isStreaming = false
+    session.state.streamingText = ''
+    session.state.streamingThinking = ''
     session.isRunning = false
     return true
   }
@@ -654,6 +669,8 @@ export class CodexAgentManager {
     session.abortController.abort()
     session.abortController = new AbortController()
     session.state.isStreaming = false
+    session.state.streamingText = ''
+    session.state.streamingThinking = ''
     session.isRunning = false
     session.currentPrompt = undefined
     session.messageQueue = []
@@ -708,6 +725,8 @@ export class CodexAgentManager {
     session.abortController.abort()
     session.isResting = true
     session.state.isStreaming = false
+    session.state.streamingText = ''
+    session.state.streamingThinking = ''
     session.isRunning = false
     session.codexInstance = undefined
     session.thread = undefined

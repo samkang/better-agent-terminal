@@ -168,6 +168,8 @@ const electronAPI = {
       ipcRenderer.invoke('claude:cleanup-worktree', sessionId, deleteBranch) as Promise<boolean>,
     scanSkills: (cwd: string) =>
       ipcRenderer.invoke('claude:scan-skills', cwd) as Promise<{ name: string; description: string; scope: 'project' | 'global' }[]>,
+    getSessionState: (sessionId: string) =>
+      ipcRenderer.invoke('claude:get-session-state', sessionId) as Promise<import('../src/types/claude-agent').ClaudeSessionState | null>,
     getSessionMeta: (sessionId: string) =>
       ipcRenderer.invoke('claude:get-session-meta', sessionId) as Promise<Record<string, unknown> | null>,
     getContextUsage: (sessionId: string) =>

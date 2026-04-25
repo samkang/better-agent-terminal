@@ -17,6 +17,18 @@ export interface CodexStreamItemSink {
   sendError: (message: string) => void
 }
 
+function normalizeTodoItems(items: Array<Record<string, unknown>> | undefined): Array<{ content: string; status: string }> {
+  if (!items) return []
+  return items
+    .map(item => {
+      const content = String(item.content ?? item.text ?? item.description ?? '').trim()
+      const rawStatus = String(item.status ?? '').trim()
+      const status = rawStatus || (item.completed === true ? 'completed' : 'pending')
+      return { content, status }
+    })
+    .filter(item => item.content)
+}
+
 export function handleItemStarted(sessionId: string, item: Record<string, unknown>, state: CodexStreamItemState, sink: CodexStreamItemSink): void {
   const itemType = item?.type as string
   state.currentItemId = (item?.id as string) || `item-${Date.now()}`
@@ -73,7 +85,7 @@ export function handleItemStarted(sessionId: string, item: Record<string, unknow
       id: state.currentItemId,
       sessionId,
       toolName: 'TodoWrite',
-      input: { todos: items || [] },
+      input: { todos: normalizeTodoItems(items) },
       status: 'running',
       timestamp: Date.now(),
     })
@@ -178,13 +190,13 @@ export function handleItemUpdated(sessionId: string, item: Record<string, unknow
         id: itemId,
         sessionId,
         toolName: 'TodoWrite',
-        input: { todos: items || [] },
+        input: { todos: normalizeTodoItems(items) },
         status: 'running',
         timestamp: Date.now(),
       })
     }
     sink.updateToolCall(itemId, {
-      input: { todos: items || [] },
+      input: { todos: normalizeTodoItems(items) },
       status: 'running',
     })
   }
@@ -285,18 +297,20 @@ export function handleItemCompleted(sessionId: string, item: Record<string, unkn
     })
   } else if (itemType === 'todo_list') {
     const items = item?.items as Array<Record<string, unknown>> | undefined
-    const summary = items?.map(t => `${t.completed ? '[x]' : '[ ]'} ${t.text || t.description || ''}`).join('\n') || 'Todo list updated'
+    const todos = normalizeTodoItems(items)
+    const summary = todos.map(t => `${t.status === 'completed' ? '[x]' : '[ ]'} ${t.content}`).join('\n') || 'Todo list updated'
     if (!sink.hasToolCall(itemId)) {
       sink.addToolCall({
         id: itemId,
         sessionId,
         toolName: 'TodoWrite',
-        input: { todos: items || [] },
+        input: { todos },
         status: 'running',
         timestamp: Date.now(),
       })
     }
     sink.updateToolCall(itemId, {
+      input: { todos },
       status: 'completed',
       result: summary,
     })

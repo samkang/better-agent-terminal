@@ -11,6 +11,7 @@ import { workspaceStore } from '../stores/workspace-store'
 import type { AgentPresetId } from '../types/agent-presets'
 import { LinkedText, FilePreviewModal } from './PathLinker'
 import { renderChatMarkdown, openChatMarkdownLink } from '../utils/chat-markdown'
+import { filenameForPastedImage, readFileAsDataUrl } from '../utils/file-data-url'
 import { extractInterruptedContinuation } from '../utils/interrupted-prompt'
 
 interface SessionMeta {
@@ -247,6 +248,7 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
   const [slashMenuIndex, setSlashMenuIndex] = useState(0)
   // Ctrl+P file picker
   const [showFilePicker, setShowFilePicker] = useState(false)
+  const [filePickerMode, setFilePickerMode] = useState<'preview' | 'attach'>('preview')
   const [filePickerQuery, setFilePickerQuery] = useState('')
   const [filePickerResults, setFilePickerResults] = useState<{ name: string; path: string; isDirectory: boolean }[]>([])
   const [filePickerIndex, setFilePickerIndex] = useState(0)
@@ -2057,6 +2059,7 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
       // Ctrl+P: open file picker
       if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
         e.preventDefault()
+        setFilePickerMode('preview')
         setShowFilePicker(true)
         setFilePickerQuery('')
         setFilePickerResults([])
@@ -2204,6 +2207,14 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
     }
   }, [attachedImages])
 
+  const addImageDataUrl = useCallback((path: string, dataUrl: string) => {
+    setAttachedImages(prev => {
+      if (prev.length >= MAX_IMAGES) return prev
+      if (prev.some(img => img.path === path)) return prev
+      return [...prev, { path, dataUrl }]
+    })
+  }, [])
+
   const addFileByPath = useCallback((filePath: string) => {
     setAttachedFiles(prev => {
       if (prev.length >= MAX_FILES) return prev
@@ -2219,14 +2230,24 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
     for (const item of items) {
       if (item.type.startsWith('image/')) {
         e.preventDefault()
-        const filePath = await window.electronAPI.clipboard.saveImage()
-        if (filePath) {
-          await addImageByPath(filePath)
+        const file = item.getAsFile()
+        if (file) {
+          const dataUrl = await readFileAsDataUrl(file)
+          addImageDataUrl(filenameForPastedImage(file), dataUrl)
+          return
+        }
+        if (!isRemoteConnected) {
+          const filePath = await window.electronAPI.clipboard.saveImage()
+          if (filePath) {
+            await addImageByPath(filePath)
+          }
+        } else {
+          window.alert('Remote sessions can only attach pasted images when the clipboard exposes image data.')
         }
         return
       }
     }
-  }, [addImageByPath])
+  }, [addImageByPath, addImageDataUrl, isRemoteConnected])
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -2242,6 +2263,15 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
     e.preventDefault()
     setIsDragOver(false)
     for (const file of e.dataTransfer.files) {
+      if (isRemoteConnected) {
+        if (file.type.startsWith('image/')) {
+          const dataUrl = await readFileAsDataUrl(file)
+          addImageDataUrl(file.name || filenameForPastedImage(file), dataUrl)
+        } else {
+          window.alert('Remote sessions can only attach local dropped images. File paths must exist on the host.')
+        }
+        continue
+      }
       const filePath = window.electronAPI.shell.getPathForFile(file)
       if (!filePath) continue
       if (file.type.startsWith('image/')) {
@@ -2250,21 +2280,34 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
         addFileByPath(filePath)
       }
     }
-  }, [addImageByPath, addFileByPath])
+  }, [addImageByPath, addImageDataUrl, addFileByPath, isRemoteConnected])
 
   const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.svg'])
 
-  const handleSelectAttachments = useCallback(async () => {
-    const paths = await window.electronAPI.dialog.selectFiles()
-    for (const p of paths) {
-      const ext = p.slice(p.lastIndexOf('.')).toLowerCase()
+  const handleSelectAttachments = useCallback(() => {
+    setFilePickerMode('attach')
+    setShowFilePicker(true)
+    setFilePickerQuery('')
+    setFilePickerResults([])
+    setFilePickerIndex(0)
+    setTimeout(() => filePickerInputRef.current?.focus(), 50)
+  }, [])
+
+  const handleFilePickerSelect = useCallback(async (item: { path: string; isDirectory: boolean }) => {
+    if (item.isDirectory) return
+    setShowFilePicker(false)
+    if (filePickerMode === 'attach') {
+      const extensionIndex = item.path.lastIndexOf('.')
+      const ext = extensionIndex >= 0 ? item.path.slice(extensionIndex).toLowerCase() : ''
       if (IMAGE_EXTENSIONS.has(ext)) {
-        await addImageByPath(p)
+        await addImageByPath(item.path)
       } else {
-        addFileByPath(p)
+        addFileByPath(item.path)
       }
+      return
     }
-  }, [addImageByPath, addFileByPath])
+    setFilePickerPreview(item.path)
+  }, [filePickerMode, addImageByPath, addFileByPath])
 
   const removeImage = useCallback((filePath: string) => {
     setAttachedImages(prev => prev.filter(img => img.path !== filePath))
@@ -3366,7 +3409,7 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
               ref={filePickerInputRef}
               className="claude-file-picker-input"
               type="text"
-              placeholder="Search files by name..."
+              placeholder={filePickerMode === 'attach' ? 'Search host files to attach...' : 'Search files by name...'}
               value={filePickerQuery}
               onChange={e => setFilePickerQuery(e.target.value)}
               onKeyDown={e => {
@@ -3380,8 +3423,7 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
                   e.preventDefault()
                   const selected = filePickerResults[filePickerIndex]
                   if (selected && !selected.isDirectory) {
-                    setShowFilePicker(false)
-                    setFilePickerPreview(selected.path)
+                    void handleFilePickerSelect(selected)
                   }
                 } else if (e.key === 'Escape') {
                   e.preventDefault()
@@ -3391,7 +3433,7 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
             />
             <div className="claude-file-picker-list">
               {!filePickerQuery.trim() && (
-                <div className="claude-file-picker-empty">Type to search files...</div>
+                <div className="claude-file-picker-empty">{filePickerMode === 'attach' ? 'Type to search host files...' : 'Type to search files...'}</div>
               )}
               {filePickerQuery.trim() && filePickerResults.length === 0 && (
                 <div className="claude-file-picker-empty">No files found</div>
@@ -3406,8 +3448,7 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
                     className={`claude-file-picker-item${i === filePickerIndex ? ' selected' : ''}${item.isDirectory ? ' is-dir' : ''}`}
                     onClick={() => {
                       if (!item.isDirectory) {
-                        setShowFilePicker(false)
-                        setFilePickerPreview(item.path)
+                        void handleFilePickerSelect(item)
                       }
                     }}
                     onMouseEnter={() => setFilePickerIndex(i)}

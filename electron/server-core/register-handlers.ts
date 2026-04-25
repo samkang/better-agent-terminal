@@ -410,6 +410,7 @@ export function registerProxiedHandlers(deps: ProxiedHandlersDeps): void {
     }
     return results
   })
+  registerHandler('claude:get-session-state', (_ctx, sessionId: string) => getManager(sessionId)?.getSessionState(sessionId) ?? null)
   registerHandler('claude:get-session-meta', (_ctx, sessionId: string) => getManager(sessionId)?.getSessionMeta(sessionId))
   registerHandler('claude:get-context-usage', (_ctx, sessionId: string) => getManager(sessionId)?.getContextUsage(sessionId))
   registerHandler('claude:resolve-permission', (_ctx, sessionId: string, toolUseId: string, result: { behavior: string; updatedInput?: Record<string, unknown>; updatedPermissions?: unknown[]; message?: string; dontAskAgain?: boolean }) => getManager(sessionId)?.resolvePermission(sessionId, toolUseId, result))

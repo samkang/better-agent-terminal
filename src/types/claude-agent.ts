@@ -27,6 +27,8 @@ export interface ClaudeSessionState {
   sessionId: string
   messages: (ClaudeMessage | ClaudeToolCall)[]
   isStreaming: boolean
+  streamingText?: string
+  streamingThinking?: string
   totalCost?: number
   totalTokens?: number
 }
