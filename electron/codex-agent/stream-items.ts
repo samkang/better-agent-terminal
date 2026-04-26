@@ -29,6 +29,20 @@ function normalizeTodoItems(items: Array<Record<string, unknown>> | undefined): 
     .filter(item => item.content)
 }
 
+function normalizeWebSearchInput(item: Record<string, unknown>): Record<string, unknown> {
+  const action = item?.action as Record<string, unknown> | undefined
+  const actionQueries = Array.isArray(action?.queries)
+    ? action.queries.map(q => String(q).trim()).filter(Boolean)
+    : []
+  const query = String(item?.query ?? action?.query ?? actionQueries[0] ?? '').trim()
+  const actionType = typeof action?.type === 'string' ? action.type : ''
+  const input: Record<string, unknown> = {}
+  if (query) input.query = query
+  if (actionQueries.length > 0) input.queries = actionQueries
+  if (actionType && actionType !== 'search') input.action = actionType
+  return input
+}
+
 export function handleItemStarted(sessionId: string, item: Record<string, unknown>, state: CodexStreamItemState, sink: CodexStreamItemSink): void {
   const itemType = item?.type as string
   state.currentItemId = (item?.id as string) || `item-${Date.now()}`
@@ -75,7 +89,7 @@ export function handleItemStarted(sessionId: string, item: Record<string, unknow
       id: state.currentItemId,
       sessionId,
       toolName: 'WebSearch',
-      input: { query: (item?.query as string) || '' },
+      input: normalizeWebSearchInput(item),
       status: 'running',
       timestamp: Date.now(),
     })
@@ -169,18 +183,19 @@ export function handleItemUpdated(sessionId: string, item: Record<string, unknow
       status: (item?.status as string) === 'failed' ? 'error' : 'running',
     })
   } else if (itemType === 'web_search') {
+    const input = normalizeWebSearchInput(item)
     if (!sink.hasToolCall(itemId)) {
       sink.addToolCall({
         id: itemId,
         sessionId,
         toolName: 'WebSearch',
-        input: { query: (item?.query as string) || '' },
+        input,
         status: 'running',
         timestamp: Date.now(),
       })
     }
     sink.updateToolCall(itemId, {
-      input: { query: (item?.query as string) || '' },
+      input,
       status: 'running',
     })
   } else if (itemType === 'todo_list') {
@@ -281,19 +296,21 @@ export function handleItemCompleted(sessionId: string, item: Record<string, unkn
       result,
     })
   } else if (itemType === 'web_search') {
+    const input = normalizeWebSearchInput(item)
     if (!sink.hasToolCall(itemId)) {
       sink.addToolCall({
         id: itemId,
         sessionId,
         toolName: 'WebSearch',
-        input: { query: (item?.query as string) || '' },
+        input,
         status: 'running',
         timestamp: Date.now(),
       })
     }
     sink.updateToolCall(itemId, {
+      input,
       status: 'completed',
-      result: 'Search completed',
+      result: input.query ? `Search completed: ${String(input.query)}` : 'Search completed',
     })
   } else if (itemType === 'todo_list') {
     const items = item?.items as Array<Record<string, unknown>> | undefined

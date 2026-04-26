@@ -214,6 +214,7 @@ export function CodexAgentPanel({ sessionId, cwd, isActive, workspaceId, onClose
   const followOutputRef = useRef(true)
   const lastScrollTopRef = useRef(0)
   const userScrollIntentUntilRef = useRef(0)
+  const middleMessageScrollRef = useRef<{ startX: number; startY: number; startScrollTop: number; startScrollLeft: number } | null>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const activeTasksRef = useRef<HTMLDivElement>(null)
   const [aboveViewportUserMsgIds, setAboveViewportUserMsgIds] = useState<Set<string>>(new Set())
@@ -274,6 +275,10 @@ export function CodexAgentPanel({ sessionId, cwd, isActive, workspaceId, onClose
     userScrollIntentUntilRef.current = performance.now() + 1500
   }, [])
 
+  const clearMiddleMessageScroll = useCallback(() => {
+    middleMessageScrollRef.current = null
+  }, [])
+
   const handleMessagesWheel = useCallback((e: { deltaY: number }) => {
     markUserScrollIntent()
     if (e.deltaY < 0) {
@@ -283,13 +288,73 @@ export function CodexAgentPanel({ sessionId, cwd, isActive, workspaceId, onClose
     }
   }, [markUserScrollIntent])
 
-  const handleMessagesMouseDown = useCallback((e: { button: number }) => {
-    if (e.button === 0 || e.button === 1) markUserScrollIntent()
+  const handleMessagesMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button === 1) {
+      e.preventDefault()
+      markUserScrollIntent()
+      const el = messagesContainerRef.current
+      if (el) {
+        middleMessageScrollRef.current = {
+          startX: e.clientX,
+          startY: e.clientY,
+          startScrollTop: el.scrollTop,
+          startScrollLeft: el.scrollLeft,
+        }
+      }
+      return
+    }
+    if (e.button === 0) markUserScrollIntent()
   }, [markUserScrollIntent])
 
   const handleMessagesMouseUp = useCallback(() => {
+    clearMiddleMessageScroll()
     userScrollIntentUntilRef.current = performance.now() + 300
+  }, [clearMiddleMessageScroll])
+
+  const handleMessagesAuxClick = useCallback((e: React.MouseEvent) => {
+    if (e.button === 1) e.preventDefault()
   }, [])
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      const active = middleMessageScrollRef.current
+      if (!active) return
+      if ((e.buttons & 4) === 0) {
+        clearMiddleMessageScroll()
+        return
+      }
+      const el = messagesContainerRef.current
+      if (!el) return
+      e.preventDefault()
+      markUserScrollIntent()
+      el.scrollTop = active.startScrollTop - (e.clientY - active.startY)
+      el.scrollLeft = active.startScrollLeft - (e.clientX - active.startX)
+      lastScrollTopRef.current = el.scrollTop
+      const nearBottom = checkIfNearBottom()
+      isNearBottomRef.current = nearBottom
+      followOutputRef.current = nearBottom
+      setUserScrolledUp(!nearBottom)
+    }
+
+    const handleMouseUp = (e: MouseEvent) => {
+      if (e.button === 1 || (e.buttons & 4) === 0) clearMiddleMessageScroll()
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) clearMiddleMessageScroll()
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+    window.addEventListener('blur', clearMiddleMessageScroll)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+      window.removeEventListener('blur', clearMiddleMessageScroll)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [checkIfNearBottom, clearMiddleMessageScroll, markUserScrollIntent])
 
   useEffect(() => {
     if (!contextMenu) return
@@ -3038,6 +3103,7 @@ export function CodexAgentPanel({ sessionId, cwd, isActive, workspaceId, onClose
         onWheel={handleMessagesWheel}
         onMouseDown={handleMessagesMouseDown}
         onMouseUp={handleMessagesMouseUp}
+        onAuxClick={handleMessagesAuxClick}
         onContextMenu={(e) => {
           e.preventDefault()
           setContextMenu({ x: e.clientX, y: e.clientY })

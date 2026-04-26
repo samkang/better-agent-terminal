@@ -100,22 +100,39 @@ export function ThumbnailBar({
   }, [contextMenu])
 
   useEffect(() => {
+    const clearMiddlePan = () => {
+      middlePanRef.current = null
+    }
+
     const handleMouseMove = (e: MouseEvent) => {
       if (!middlePanRef.current) return
+      if ((e.buttons & 4) === 0) {
+        clearMiddlePan()
+        return
+      }
       const el = thumbnailListRef.current
       if (!el) return
+      e.preventDefault()
       el.scrollLeft = middlePanRef.current.startScrollLeft - (e.clientX - middlePanRef.current.startX)
     }
 
     const handleMouseUp = (e: MouseEvent) => {
-      if (e.button === 1) middlePanRef.current = null
+      if (e.button === 1 || (e.buttons & 4) === 0) clearMiddlePan()
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) clearMiddlePan()
     }
 
     document.addEventListener('mousemove', handleMouseMove)
     document.addEventListener('mouseup', handleMouseUp)
+    window.addEventListener('blur', clearMiddlePan)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => {
       document.removeEventListener('mousemove', handleMouseMove)
       document.removeEventListener('mouseup', handleMouseUp)
+      window.removeEventListener('blur', clearMiddlePan)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [])
 
@@ -328,6 +345,7 @@ export function ThumbnailBar({
           e.preventDefault()
         }}
         onMouseUp={(e) => { if (e.button === 1) middlePanRef.current = null }}
+        onAuxClick={(e) => { if (e.button === 1) e.preventDefault() }}
       >
         {terminals.map(terminal => (
           <div
