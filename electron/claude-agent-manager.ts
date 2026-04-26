@@ -14,6 +14,7 @@ import type { WorktreeInfo } from './worktree-manager'
 import {
   CLAUDE_OPUS_47_1M_PRESET,
   CLAUDE_OPUS_47_200K_PRESET,
+  CLAUDE_OPUS_47_300K_PRESET,
   CLAUDE_OPUS_47_400K_PRESET,
   autoCompactWindowForClaudeSelection,
   contextWindowForClaudeSelection,
@@ -32,6 +33,7 @@ import { getNotifier } from './server-core/notifier'
 // BAT built-in curated model list (always available, shown first)
 const BAT_BUILTIN_MODELS: Array<{ value: string; displayName: string; description: string }> = [
   { value: CLAUDE_OPUS_47_200K_PRESET, displayName: 'Opus 4.7 · 200K Auto-Compact', description: 'claude-opus-4-7 · compact at 200K tokens' },
+  { value: CLAUDE_OPUS_47_300K_PRESET, displayName: 'Opus 4.7 · 300K Auto-Compact', description: 'claude-opus-4-7 · compact at 300K tokens' },
   { value: CLAUDE_OPUS_47_400K_PRESET, displayName: 'Opus 4.7 · 400K Auto-Compact', description: 'claude-opus-4-7 · compact at 400K tokens' },
   { value: CLAUDE_OPUS_47_1M_PRESET,   displayName: 'Opus 4.7 · 1M',                description: 'claude-opus-4-7 · no early auto-compact' },
   { value: 'claude-opus-4-6',     displayName: 'Opus 4.6 (1M)',    description: 'claude-opus-4-6 · 1M context' },
@@ -54,6 +56,16 @@ function expectedContextWindowForModel(model?: string): number | undefined {
   const presetContextWindow = contextWindowForClaudeSelection(model)
   if (presetContextWindow) return presetContextWindow
   return BAT_BUILTIN_MODEL_CONTEXT_WINDOWS.get(model)
+}
+
+function buildClaudeSdkEnv(autoCompactWindow?: number): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env }
+  if (autoCompactWindow) {
+    env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = String(autoCompactWindow)
+  } else {
+    delete env.CLAUDE_CODE_AUTO_COMPACT_WINDOW
+  }
+  return env
 }
 
 
@@ -770,6 +782,7 @@ export class ClaudeAgentManager {
       // Map app-level bypassPlan to SDK's plan mode
       const sdkMode: PermissionMode = currentMode === 'bypassPlan' ? 'plan' : currentMode
       const sdkModel = sdkModelForClaudeSelection(session.model)
+      const sdkEnv = buildClaudeSdkEnv(session.autoCompactWindow)
       const queryOptions: Record<string, unknown> = {
         abortController: session.abortController,
         cwd: session.cwd,
@@ -780,9 +793,8 @@ export class ClaudeAgentManager {
         includePartialMessages: true,
         promptSuggestions: true,
         settingSources: ['user', 'project', 'local'],
-        thinking: { type: 'enabled' },
         effort: session.effort,
-        ...(session.autoCompactWindow ? { autoCompactWindow: session.autoCompactWindow } : {}),
+        env: sdkEnv,
         toolConfig: { askUserQuestion: { previewFormat: 'html' } },
         agentProgressSummaries: true,
         ...(sdkModel ? { model: sdkModel } : {}),
@@ -1594,13 +1606,14 @@ export class ClaudeAgentManager {
       }
       if (!session.v2Session) {
         const { createSession, resumeSession } = await getV2Api()
+        const sdkEnv = buildClaudeSdkEnv(session.autoCompactWindow)
         const v2Options = {
           model: effectiveModel,
           permissionMode: sdkMode,
           canUseTool,
+          env: sdkEnv,
           ...(claudeCodePath ? { pathToClaudeCodeExecutable: claudeCodePath } : {}),
           ...(nodeExecutable !== 'node' || electronFallback ? { executable: nodeExecutable } : {}),
-          ...(session.autoCompactWindow ? { autoCompactWindow: session.autoCompactWindow } : {}),
         }
 
         // Only resume if the sdkSessionId was created by a V2 session

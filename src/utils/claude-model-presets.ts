@@ -1,10 +1,12 @@
 export const CLAUDE_OPUS_47_MODEL = 'claude-opus-4-7'
 export const CLAUDE_OPUS_47_200K_PRESET = 'claude-opus-4-7:auto-compact-200k'
+export const CLAUDE_OPUS_47_300K_PRESET = 'claude-opus-4-7:auto-compact-300k'
 export const CLAUDE_OPUS_47_400K_PRESET = 'claude-opus-4-7:auto-compact-400k'
 export const CLAUDE_OPUS_47_1M_PRESET = 'claude-opus-4-7:1m'
 
 const OPUS_47_PRESET_AUTO_COMPACT = new Map<string, number | null>([
   [CLAUDE_OPUS_47_200K_PRESET, 200000],
+  [CLAUDE_OPUS_47_300K_PRESET, 300000],
   [CLAUDE_OPUS_47_400K_PRESET, 400000],
   [CLAUDE_OPUS_47_1M_PRESET, null],
 ])
@@ -47,6 +49,7 @@ export function contextWindowForClaudeSelection(model?: string): number | undefi
 
 export function displayNameForClaudeSelection(model?: string): string {
   if (model === CLAUDE_OPUS_47_200K_PRESET) return 'Opus 4.7 · 200K Auto-Compact'
+  if (model === CLAUDE_OPUS_47_300K_PRESET) return 'Opus 4.7 · 300K Auto-Compact'
   if (model === CLAUDE_OPUS_47_400K_PRESET) return 'Opus 4.7 · 400K Auto-Compact'
   if (model === CLAUDE_OPUS_47_1M_PRESET) return 'Opus 4.7 · 1M'
   return model || ''
