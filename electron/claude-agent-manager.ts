@@ -12,10 +12,8 @@ import { getNodeExecutable, isElectronFallback } from './node-resolver'
 import { worktreeManager } from './worktree-manager'
 import type { WorktreeInfo } from './worktree-manager'
 import {
-  CLAUDE_OPUS_47_1M_PRESET,
-  CLAUDE_OPUS_47_200K_PRESET,
-  CLAUDE_OPUS_47_300K_PRESET,
-  CLAUDE_OPUS_47_400K_PRESET,
+  CLAUDE_BUILTIN_MODELS,
+  CLAUDE_BUILTIN_MODEL_CONTEXT_WINDOWS,
   autoCompactWindowForClaudeSelection,
   contextWindowForClaudeSelection,
   isClaudeModelPreset,
@@ -30,32 +28,11 @@ import { broadcastHub } from './remote/broadcast-hub'
 import { getDataDir } from './server-core/data-dir'
 import { getNotifier } from './server-core/notifier'
 
-// BAT built-in curated model list (always available, shown first)
-const BAT_BUILTIN_MODELS: Array<{ value: string; displayName: string; description: string }> = [
-  { value: CLAUDE_OPUS_47_200K_PRESET, displayName: 'Opus 4.7 · 200K Auto-Compact', description: 'claude-opus-4-7 · compact at 200K tokens' },
-  { value: CLAUDE_OPUS_47_300K_PRESET, displayName: 'Opus 4.7 · 300K Auto-Compact', description: 'claude-opus-4-7 · compact at 300K tokens' },
-  { value: CLAUDE_OPUS_47_400K_PRESET, displayName: 'Opus 4.7 · 400K Auto-Compact', description: 'claude-opus-4-7 · compact at 400K tokens' },
-  { value: CLAUDE_OPUS_47_1M_PRESET,   displayName: 'Opus 4.7 · 1M',                description: 'claude-opus-4-7 · no early auto-compact' },
-  { value: 'claude-opus-4-6',     displayName: 'Opus 4.6 (1M)',    description: 'claude-opus-4-6 · 1M context' },
-  { value: 'claude-sonnet-4-6',   displayName: 'Sonnet 4.6 (1M)',  description: 'claude-sonnet-4-6 · 1M context' },
-  { value: 'claude-haiku-4-5-20251001', displayName: 'Haiku 4.5', description: 'claude-haiku-4-5 · fast & lightweight' },
-]
-
-const BAT_BUILTIN_MODEL_CONTEXT_WINDOWS = new Map<string, number>([
-  ['claude-opus-4-7', 1000000],
-  ['claude-opus-4-7[1m]', 1000000],
-  ['claude-opus-4-6', 1000000],
-  ['claude-opus-4-6[1m]', 1000000],
-  ['claude-sonnet-4-6', 1000000],
-  ['claude-sonnet-4-6[1m]', 1000000],
-  ['claude-haiku-4-5-20251001', 200000],
-])
-
 function expectedContextWindowForModel(model?: string): number | undefined {
   if (!model) return undefined
   const presetContextWindow = contextWindowForClaudeSelection(model)
   if (presetContextWindow) return presetContextWindow
-  return BAT_BUILTIN_MODEL_CONTEXT_WINDOWS.get(model)
+  return CLAUDE_BUILTIN_MODEL_CONTEXT_WINDOWS.get(model)
 }
 
 function buildClaudeSdkEnv(autoCompactWindow?: number): NodeJS.ProcessEnv {
@@ -1941,8 +1918,8 @@ export class ClaudeAgentManager {
   }
 
   async getSupportedModels(_sessionId: string): Promise<Array<{ value: string; displayName: string; description: string; source: 'builtin' | 'sdk' }>> {
-    const builtinValues = new Set(BAT_BUILTIN_MODEL_CONTEXT_WINDOWS.keys())
-    const builtins = BAT_BUILTIN_MODELS.map(m => ({ ...m, source: 'builtin' as const }))
+    const builtinValues = new Set(CLAUDE_BUILTIN_MODEL_CONTEXT_WINDOWS.keys())
+    const builtins = CLAUDE_BUILTIN_MODELS.map(m => ({ ...m, source: 'builtin' as const }))
     try {
       const query = await getQuery()
       const instance = query({ prompt: '', cwd: '/' })

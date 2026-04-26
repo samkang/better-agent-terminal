@@ -275,7 +275,7 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
         const terminalCount = settings.defaultTerminalCount || 1
         const createAgentTerminal = settings.createDefaultAgentTerminal === true
         const defaultAgent = createAgentTerminal
-          ? (workspace.defaultAgent || settings.defaultAgent || 'claude')
+          ? (workspace.defaultAgent || settings.defaultAgent || 'claude-code')
           : 'none'
 
         if (createAgentTerminal) {

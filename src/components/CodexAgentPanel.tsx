@@ -57,9 +57,8 @@ export function CodexAgentPanel({ sessionId, cwd, isActive, workspaceId, onClose
   const [permissionMode, setPermissionMode] = useState<string>('bypassPermissions')
   const [currentModel, setCurrentModel] = useState<string>(() => {
     const t = workspaceStore.getState().terminals.find(t => t.id === sessionId)
-    // Codex default mirrors DEFAULT_CODEX_MODEL in electron/codex-agent-manager.ts.
-    if (isCodexSession) return t?.model || 'gpt-5.5'
-    return t?.model || settingsStore.getSettings().defaultModel || ''
+    if (isCodexSession) return t?.model || settingsStore.getSettings().defaultCodexModel || ''
+    return t?.model || settingsStore.getSettings().defaultClaudeModel || ''
   })
   const [codexSandboxMode, setCodexSandboxMode] = useState<'read-only' | 'workspace-write' | 'danger-full-access'>(() => {
     const value = normalizedAgentParams?.sandboxMode
@@ -76,7 +75,7 @@ export function CodexAgentPanel({ sessionId, cwd, isActive, workspaceId, onClose
   const [effortLevel, setEffortLevel] = useState<string>(() => {
     const saved = normalizedAgentParams?.effortLevel
     if (typeof saved === 'string' && CODEX_EFFORT_LEVELS.includes(saved as CodexEffortLevel)) return saved
-    const globalDefault = settingsStore.getSettings().defaultEffort
+    const globalDefault = settingsStore.getSettings().defaultCodexEffort
     if (typeof globalDefault === 'string' && CODEX_EFFORT_LEVELS.includes(globalDefault as CodexEffortLevel)) return globalDefault
     return 'high'
   })
@@ -1026,8 +1025,8 @@ export function CodexAgentPanel({ sessionId, cwd, isActive, workspaceId, onClose
         dlog(`${stag} sdkSessionId=${savedSdkSessionId?.slice(0, 8)} pendingPrompt="${terminal?.pendingPrompt || ''}" apiVersion=${apiVersion}`)
 
         const effectiveModel = isCodexSession
-          ? (savedModel || '')
-          : (savedModel || globalSettings.defaultModel)
+          ? (savedModel || globalSettings.defaultCodexModel || '')
+          : (savedModel || globalSettings.defaultClaudeModel || '')
         if (effectiveModel) setCurrentModel(effectiveModel)
 
         const effectiveEffort = isCodexSession
@@ -1057,7 +1056,7 @@ export function CodexAgentPanel({ sessionId, cwd, isActive, workspaceId, onClose
         } else {
           dlog(`${stag} FRESH startSession`)
           window.electronAPI.claude.startSession(sessionId, {
-            cwd, permissionMode, model: effectiveModel,
+            cwd, permissionMode, model: effectiveModel || undefined,
             effort: effectiveEffort as EffortLevel,
             apiVersion,
             agentPreset: terminal?.agentPreset,

@@ -1,7 +1,8 @@
-import type { AppSettings, ShellType, FontType, ColorPresetId, EnvVariable, AgentCommandType, StatuslineItemConfig, StatuslineItemId, LanguageCode, EffortLevel } from '../types'
+import type { AppSettings, ShellType, FontType, ColorPresetId, EnvVariable, AgentCommandType, StatuslineItemConfig, StatuslineItemId, LanguageCode, EffortLevel, CodexEffortLevel } from '../types'
 import type { AgentPresetId } from '../types/agent-presets'
-import { FONT_OPTIONS, COLOR_PRESETS, AGENT_COMMAND_OPTIONS, STATUSLINE_ITEMS } from '../types'
-import { CLAUDE_OPUS_47_1M_PRESET, normalizeClaudeModelSelection } from '../utils/claude-model-presets'
+import { CODEX_EFFORT_LEVELS, FONT_OPTIONS, COLOR_PRESETS, AGENT_COMMAND_OPTIONS, STATUSLINE_ITEMS } from '../types'
+import { CLAUDE_BUILTIN_MODELS, CLAUDE_OPUS_47_1M_PRESET, normalizeClaudeModelSelection } from '../utils/claude-model-presets'
+import { CODEX_MODELS } from '../utils/codex-models'
 
 type Listener = () => void
 
@@ -9,6 +10,10 @@ const isWindows = typeof navigator !== 'undefined' && navigator.userAgent.includ
 const LEGACY_DEFAULT_MODEL = 'claude-opus-4-6'
 const LEGACY_OPUS_47_MODEL = 'claude-opus-4-7'
 const CURRENT_DEFAULT_MODEL = CLAUDE_OPUS_47_1M_PRESET
+
+function isModelInList(model: string | undefined, models: Array<{ value: string }>): boolean {
+  return !!model && models.some(item => item.value === model)
+}
 
 const defaultSettings: AppSettings = {
   language: 'en',
@@ -30,7 +35,8 @@ const defaultSettings: AppSettings = {
   defaultTerminalCount: 1,
   createDefaultAgentTerminal: true,
   allowBypassPermissions: true,
-  defaultModel: CURRENT_DEFAULT_MODEL,
+  defaultEffort: 'high',
+  defaultCodexEffort: 'high',
 }
 
 class SettingsStore {
@@ -209,13 +215,38 @@ class SettingsStore {
   }
 
   setDefaultModel(model: string): void {
-    this.settings = { ...this.settings, defaultModel: model || undefined }
+    this.setDefaultClaudeModel(model)
+  }
+
+  setDefaultClaudeModel(model: string, custom = this.settings.defaultClaudeModelCustom === true): void {
+    this.settings = {
+      ...this.settings,
+      defaultClaudeModel: normalizeClaudeModelSelection(model) || undefined,
+      defaultClaudeModelCustom: custom || undefined,
+      defaultModel: undefined,
+    }
+    this.notify()
+    this.save()
+  }
+
+  setDefaultCodexModel(model: string, custom = this.settings.defaultCodexModelCustom === true): void {
+    this.settings = {
+      ...this.settings,
+      defaultCodexModel: model || undefined,
+      defaultCodexModelCustom: custom || undefined,
+    }
     this.notify()
     this.save()
   }
 
   setDefaultEffort(effort: EffortLevel): void {
     this.settings = { ...this.settings, defaultEffort: effort }
+    this.notify()
+    this.save()
+  }
+
+  setDefaultCodexEffort(effort: CodexEffortLevel): void {
+    this.settings = { ...this.settings, defaultCodexEffort: effort }
     this.notify()
     this.save()
   }
@@ -338,12 +369,18 @@ class SettingsStore {
     if (data) {
       try {
         const parsed = JSON.parse(data)
-        // Strip persisted defaultAgent so it always falls through to code default
-        delete parsed.defaultAgent
-        if (parsed.defaultModel === LEGACY_DEFAULT_MODEL || parsed.defaultModel === LEGACY_OPUS_47_MODEL) {
-          parsed.defaultModel = CURRENT_DEFAULT_MODEL
-        } else {
-          parsed.defaultModel = normalizeClaudeModelSelection(parsed.defaultModel)
+        if (!parsed.defaultClaudeModel && parsed.defaultModel) {
+          parsed.defaultClaudeModel = parsed.defaultModel === LEGACY_DEFAULT_MODEL || parsed.defaultModel === LEGACY_OPUS_47_MODEL
+            ? CURRENT_DEFAULT_MODEL
+            : normalizeClaudeModelSelection(parsed.defaultModel)
+        }
+        parsed.defaultClaudeModel = normalizeClaudeModelSelection(parsed.defaultClaudeModel)
+        parsed.defaultModel = undefined
+        parsed.defaultCodexModel = typeof parsed.defaultCodexModel === 'string' ? parsed.defaultCodexModel || undefined : undefined
+        parsed.defaultClaudeModelCustom = parsed.defaultClaudeModelCustom === true || (!!parsed.defaultClaudeModel && !isModelInList(parsed.defaultClaudeModel, CLAUDE_BUILTIN_MODELS)) || undefined
+        parsed.defaultCodexModelCustom = parsed.defaultCodexModelCustom === true || (!!parsed.defaultCodexModel && !isModelInList(parsed.defaultCodexModel, CODEX_MODELS)) || undefined
+        if (!parsed.defaultCodexEffort && CODEX_EFFORT_LEVELS.includes(parsed.defaultEffort)) {
+          parsed.defaultCodexEffort = parsed.defaultEffort
         }
         this.settings = { ...defaultSettings, ...parsed }
         this.notify()

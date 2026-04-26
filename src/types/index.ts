@@ -231,8 +231,13 @@ export interface AppSettings {
   defaultTerminalCount: number;   // 每個 workspace 預設的 terminal 數量
   createDefaultAgentTerminal: boolean;  // 是否預設建立 Agent Terminal
   allowBypassPermissions: boolean;  // 允許切換 bypassPermissions 模式不再確認；同時讓 Codex 以 danger-full-access 啟動
-  defaultModel?: string;     // 預設模型（空 = 使用 SDK 預設）
-  defaultEffort?: EffortLevel;  // 預設 effort level
+  defaultModel?: string;     // Legacy Claude 預設模型（保留用於遷移）
+  defaultClaudeModel?: string;  // Claude 預設模型（空 = 使用 Agent 自己的預設）
+  defaultClaudeModelCustom?: boolean;  // Claude 模型欄位是否使用自訂輸入模式
+  defaultCodexModel?: string;   // Codex 預設模型（空 = 使用 Agent 自己的預設）
+  defaultCodexModelCustom?: boolean;   // Codex 模型欄位是否使用自訂輸入模式
+  defaultEffort?: EffortLevel;  // Claude 預設 effort level
+  defaultCodexEffort?: CodexEffortLevel;  // Codex 預設 effort level
   showDockBadge?: boolean;               // Dock 圖示顯示待處理數量
   notifyOnComplete?: boolean;           // Agent 完成時發送系統通知
   notifySound?: boolean;               // 通知時播放聲音

@@ -154,7 +154,7 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
   const [permissionMode, setPermissionMode] = useState<string>('bypassPermissions')
   const [currentModel, setCurrentModel] = useState<string>(() => {
     const t = workspaceStore.getState().terminals.find(t => t.id === sessionId)
-    return normalizeClaudeModelSelection(t?.model || settingsStore.getSettings().defaultModel) || ''
+    return normalizeClaudeModelSelection(t?.model || settingsStore.getSettings().defaultClaudeModel) || ''
   })
   const [codexSandboxMode, setCodexSandboxMode] = useState<'read-only' | 'workspace-write' | 'danger-full-access'>(() => {
     const value = normalizedAgentParams?.sandboxMode
@@ -1074,7 +1074,7 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
       dlog(`${stag} sdkSessionId=${savedSdkSessionId?.slice(0, 8)} pendingPrompt="${terminal?.pendingPrompt || ''}" apiVersion=${apiVersion}`)
 
       // Restore saved model to UI, or use global default
-      const effectiveModel = normalizeClaudeModelSelection(savedModel || globalSettings.defaultModel)
+      const effectiveModel = normalizeClaudeModelSelection(savedModel || globalSettings.defaultClaudeModel)
       if (effectiveModel) setCurrentModel(effectiveModel)
 
       // Use global default effort

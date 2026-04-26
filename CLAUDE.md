@@ -12,7 +12,10 @@
 - **Frontend (renderer)**: Use `window.electronAPI.debug.log(...)` instead of `console.log()`. This sends logs to the electron main process logger, which writes to disk.
 - **Backend (electron)**: Use `logger.log(...)` / `logger.error(...)` from `./logger`.
 - Do NOT use `console.log()` for debugging — use the logger so logs are persisted and visible in the log file.
-- **Log file location**: `~/Library/Application Support/better-agent-terminal/debug.log`
+- **Log file location** (`debug.log` inside the userData directory):
+  - macOS: `~/Library/Application Support/better-agent-terminal/debug.log`
+  - Windows: `%APPDATA%\better-agent-terminal\debug.log`
+  - Linux: `~/.config/better-agent-terminal/debug.log`
 
 ## Sub-agent / Active Tasks Tracking
 
@@ -29,15 +32,15 @@
 ## Status Line
 
 - Our status line implementation is superior to external alternatives (e.g., ccstatusline). Do not replace it.
-- 13 configurable items with custom colors, zone alignment, and template-based config.
+- 15 configurable items (see `STATUSLINE_ITEMS` in `src/types/index.ts`) with custom colors, zone alignment, and template-based config.
 - Usage polling: Chrome session key (primary, lenient rate limits) → OAuth fallback (strict rate limits).
 
 ## Release
 
 - **正式版**: `release new tag version` → 基於最新 tag 遞增 patch 版號，建立 tag 並 push
-  - 例：目前 `v2.1.3` → 建立 `v2.1.4` tag
+  - 例：目前 `v2.2.27` → 建立 `v2.2.28` tag
 - **預覽版**: `release new pre tag version` → 基於最新 tag 遞增 patch 版號，加 `-pre.1` 後綴
-  - 例：目前 `v2.1.3` → 建立 `v2.1.4-pre.1`
-  - 若已有 `v2.1.4-pre.1` → 建立 `v2.1.4-pre.2`
+  - 例：目前 `v2.2.27` → 建立 `v2.2.28-pre.1`
+  - 若已有 `v2.2.28-pre.1` → 建立 `v2.2.28-pre.2`
 - Tag 含 `-pre` 時 GitHub Release 自動標為 Pre-release，不更新 Homebrew tap
 - Tag 不含 `-pre` 時為正式版，更新 Homebrew tap

@@ -4,6 +4,32 @@ export const CLAUDE_OPUS_47_300K_PRESET = 'claude-opus-4-7:auto-compact-300k'
 export const CLAUDE_OPUS_47_400K_PRESET = 'claude-opus-4-7:auto-compact-400k'
 export const CLAUDE_OPUS_47_1M_PRESET = 'claude-opus-4-7:1m'
 
+export type ClaudeModelInfo = {
+  value: string
+  displayName: string
+  description: string
+}
+
+export const CLAUDE_BUILTIN_MODELS: ClaudeModelInfo[] = [
+  { value: CLAUDE_OPUS_47_200K_PRESET, displayName: 'Opus 4.7 · 200K Auto-Compact', description: 'claude-opus-4-7 · compact at 200K tokens' },
+  { value: CLAUDE_OPUS_47_300K_PRESET, displayName: 'Opus 4.7 · 300K Auto-Compact', description: 'claude-opus-4-7 · compact at 300K tokens' },
+  { value: CLAUDE_OPUS_47_400K_PRESET, displayName: 'Opus 4.7 · 400K Auto-Compact', description: 'claude-opus-4-7 · compact at 400K tokens' },
+  { value: CLAUDE_OPUS_47_1M_PRESET, displayName: 'Opus 4.7 · 1M', description: 'claude-opus-4-7 · no early auto-compact' },
+  { value: 'claude-opus-4-6', displayName: 'Opus 4.6 (1M)', description: 'claude-opus-4-6 · 1M context' },
+  { value: 'claude-sonnet-4-6', displayName: 'Sonnet 4.6 (1M)', description: 'claude-sonnet-4-6 · 1M context' },
+  { value: 'claude-haiku-4-5-20251001', displayName: 'Haiku 4.5', description: 'claude-haiku-4-5 · fast & lightweight' },
+]
+
+export const CLAUDE_BUILTIN_MODEL_CONTEXT_WINDOWS = new Map<string, number>([
+  ['claude-opus-4-7', 1000000],
+  ['claude-opus-4-7[1m]', 1000000],
+  ['claude-opus-4-6', 1000000],
+  ['claude-opus-4-6[1m]', 1000000],
+  ['claude-sonnet-4-6', 1000000],
+  ['claude-sonnet-4-6[1m]', 1000000],
+  ['claude-haiku-4-5-20251001', 200000],
+])
+
 const OPUS_47_PRESET_AUTO_COMPACT = new Map<string, number | null>([
   [CLAUDE_OPUS_47_200K_PRESET, 200000],
   [CLAUDE_OPUS_47_300K_PRESET, 300000],
@@ -44,7 +70,7 @@ export function contextWindowForClaudeSelection(model?: string): number | undefi
   if (sdkModel === 'claude-sonnet-4-6') return 1000000
   if (sdkModel === 'claude-sonnet-4-6[1m]') return 1000000
   if (sdkModel === 'claude-haiku-4-5-20251001') return 200000
-  return undefined
+  return CLAUDE_BUILTIN_MODEL_CONTEXT_WINDOWS.get(sdkModel)
 }
 
 export function displayNameForClaudeSelection(model?: string): string {

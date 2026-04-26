@@ -155,7 +155,7 @@ export function OpenAIAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
   const [currentModel, setCurrentModel] = useState<string>(() => {
     const t = workspaceStore.getState().terminals.find(t => t.id === sessionId)
     if (isCodexSession) return t?.model || ''
-    return t?.model || settingsStore.getSettings().defaultModel || ''
+    return t?.model || settingsStore.getSettings().defaultClaudeModel || ''
   })
   const [codexSandboxMode, setCodexSandboxMode] = useState<'read-only' | 'workspace-write' | 'danger-full-access'>(() => {
     const value = normalizedAgentParams?.sandboxMode
@@ -172,7 +172,7 @@ export function OpenAIAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
   const [effortLevel, setEffortLevel] = useState<string>(() => {
     const saved = normalizedAgentParams?.effortLevel
     if (typeof saved === 'string' && CODEX_EFFORT_LEVELS.includes(saved as CodexEffortLevel)) return saved
-    const globalDefault = settingsStore.getSettings().defaultEffort
+    const globalDefault = settingsStore.getSettings().defaultCodexEffort
     if (typeof globalDefault === 'string' && CODEX_EFFORT_LEVELS.includes(globalDefault as CodexEffortLevel)) return globalDefault
     return 'high'
   })
@@ -1125,7 +1125,7 @@ export function OpenAIAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
       // Restore saved model to UI, or use global default
       const effectiveModel = isCodexSession
         ? (savedModel || '')
-        : (savedModel || globalSettings.defaultModel)
+        : (savedModel || globalSettings.defaultClaudeModel || '')
       if (effectiveModel) setCurrentModel(effectiveModel)
 
       const savedPermissionMode = typeof normalizedAgentParams?.permissionMode === 'string'
@@ -1148,7 +1148,7 @@ export function OpenAIAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
       } else {
         dlog(`${stag} FRESH startSession`)
         window.electronAPI.claude.startSession(sessionId, {
-          cwd, permissionMode: savedPermissionMode, model: effectiveModel,
+          cwd, permissionMode: savedPermissionMode, model: effectiveModel || undefined,
           effort: effectiveEffort as EffortLevel,
           apiVersion,
           agentPreset: terminal?.agentPreset,

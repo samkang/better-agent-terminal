@@ -2,12 +2,14 @@ import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import i18next from 'i18next'
 import QRCode from 'qrcode'
-import type { AppSettings, ShellType, FontType, ColorPresetId, StatuslineItemConfig, LanguageCode, EffortLevel } from '../types'
-import { FONT_OPTIONS, COLOR_PRESETS, SHELL_OPTIONS, STATUSLINE_ITEMS, EFFORT_LEVELS } from '../types'
+import type { AppSettings, ShellType, FontType, ColorPresetId, StatuslineItemConfig, LanguageCode, EffortLevel, CodexEffortLevel } from '../types'
+import { FONT_OPTIONS, COLOR_PRESETS, SHELL_OPTIONS, STATUSLINE_ITEMS, EFFORT_LEVELS, CODEX_EFFORT_LEVELS } from '../types'
 import { settingsStore, parseStatuslineTemplate, exportStatuslineTemplate } from '../stores/settings-store'
 import { EnvVarEditor } from './EnvVarEditor'
 import { AgentPresetId, getVisiblePresets } from '../types/agent-presets'
 import { buildConnectionUrl } from '../utils/connection-url'
+import { CLAUDE_BUILTIN_MODELS } from '../utils/claude-model-presets'
+import { CODEX_MODELS } from '../utils/codex-models'
 
 interface SettingsPanelProps {
   onClose: () => void
@@ -43,6 +45,7 @@ interface RemoteClientStatus {
 }
 
 type SettingsTab = 'general' | 'agent' | 'remote' | 'advanced'
+const CUSTOM_MODEL_OPTION = '__custom_model__'
 
 export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const { t } = useTranslation()
@@ -641,17 +644,35 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               <div className="settings-section">
                 <h3>{t('settings.modelAndEffort')}</h3>
                 <div className="settings-group">
-                  <label>{t('settings.defaultModel')}</label>
-                  <input
-                    type="text"
-                    value={settings.defaultModel || ''}
-                    onChange={e => settingsStore.setDefaultModel(e.target.value)}
-                    placeholder={t('settings.defaultModelPlaceholder')}
-                  />
-                  <p className="settings-hint">{t('settings.defaultModelHint')}</p>
+                  <label>{t('settings.defaultClaudeModel')}</label>
+                  <select
+                    value={settings.defaultClaudeModelCustom ? CUSTOM_MODEL_OPTION : settings.defaultClaudeModel || ''}
+                    onChange={e => {
+                      const value = e.target.value
+                      const custom = value === CUSTOM_MODEL_OPTION
+                      settingsStore.setDefaultClaudeModel(custom ? settings.defaultClaudeModel || '' : value, custom)
+                    }}
+                  >
+                    <option value="">{t('settings.agentModelDefault')}</option>
+                    {CLAUDE_BUILTIN_MODELS.map(model => (
+                      <option key={model.value} value={model.value}>
+                        {model.displayName}
+                      </option>
+                    ))}
+                    <option value={CUSTOM_MODEL_OPTION}>{t('settings.customModel')}</option>
+                  </select>
+                  {settings.defaultClaudeModelCustom && (
+                    <input
+                      type="text"
+                      value={settings.defaultClaudeModel || ''}
+                      onChange={e => settingsStore.setDefaultClaudeModel(e.target.value, true)}
+                      placeholder={t('settings.customModelPlaceholder')}
+                    />
+                  )}
+                  <p className="settings-hint">{t('settings.defaultClaudeModelHint')}</p>
                 </div>
                 <div className="settings-group">
-                  <label>{t('settings.defaultEffort')}</label>
+                  <label>{t('settings.defaultClaudeEffort')}</label>
                   <select
                     value={settings.defaultEffort || 'high'}
                     onChange={e => settingsStore.setDefaultEffort(e.target.value as EffortLevel)}
@@ -662,7 +683,49 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                       </option>
                     ))}
                   </select>
-                  <p className="settings-hint">{t('settings.defaultEffortHint')}</p>
+                  <p className="settings-hint">{t('settings.defaultClaudeEffortHint')}</p>
+                </div>
+                <div className="settings-group">
+                  <label>{t('settings.defaultCodexModel')}</label>
+                  <select
+                    value={settings.defaultCodexModelCustom ? CUSTOM_MODEL_OPTION : settings.defaultCodexModel || ''}
+                    onChange={e => {
+                      const value = e.target.value
+                      const custom = value === CUSTOM_MODEL_OPTION
+                      settingsStore.setDefaultCodexModel(custom ? settings.defaultCodexModel || '' : value, custom)
+                    }}
+                  >
+                    <option value="">{t('settings.agentModelDefault')}</option>
+                    {CODEX_MODELS.map(model => (
+                      <option key={model.value} value={model.value}>
+                        {model.displayName}
+                      </option>
+                    ))}
+                    <option value={CUSTOM_MODEL_OPTION}>{t('settings.customModel')}</option>
+                  </select>
+                  {settings.defaultCodexModelCustom && (
+                    <input
+                      type="text"
+                      value={settings.defaultCodexModel || ''}
+                      onChange={e => settingsStore.setDefaultCodexModel(e.target.value, true)}
+                      placeholder={t('settings.customModelPlaceholder')}
+                    />
+                  )}
+                  <p className="settings-hint">{t('settings.defaultCodexModelHint')}</p>
+                </div>
+                <div className="settings-group">
+                  <label>{t('settings.defaultCodexEffort')}</label>
+                  <select
+                    value={settings.defaultCodexEffort || 'high'}
+                    onChange={e => settingsStore.setDefaultCodexEffort(e.target.value as CodexEffortLevel)}
+                  >
+                    {CODEX_EFFORT_LEVELS.map(level => (
+                      <option key={level} value={level}>
+                        {level.charAt(0).toUpperCase() + level.slice(1)}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="settings-hint">{t('settings.defaultCodexEffortHint')}</p>
                 </div>
               </div>
 

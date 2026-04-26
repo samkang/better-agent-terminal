@@ -4,14 +4,14 @@
 
 <img src="assets/icon.png" width="128" height="128" alt="Better Agent Terminal">
 
-![Version](https://img.shields.io/badge/version-2.1.41-blue.svg)
+![Version](https://img.shields.io/badge/version-2.2.27-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%20|%20macOS%20|%20Linux-lightgrey.svg)
-![Electron](https://img.shields.io/badge/electron-28.3.3-47848F.svg)
+![Electron](https://img.shields.io/badge/electron-41.2.1-47848F.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
 **A cross-platform terminal aggregator with multi-workspace support and built-in AI agent integration**
 
-Manage multiple project terminals in one window, with a built-in Claude Code agent panel, file browser, git viewer, snippet manager, and remote access — all in a single Electron app.
+Manage multiple project terminals in one window, with built-in Claude Code and Codex agent panels, file browser, git viewer, snippet manager, and remote access — all in a single Electron app.
 
 [Download Latest Release](https://github.com/tony1223/better-agent-terminal/releases/latest)
 
@@ -117,8 +117,25 @@ Items can be reordered, colored, and toggled on/off via a drag-and-drop template
 - **Clickable file paths** — Click any file path in agent output to preview it with syntax highlighting and search (Ctrl+F)
 - **Ctrl+P file picker** — Fuzzy-search project files and attach them to the conversation context
 - **Skills & Agents panels** — Browse available slash commands and agent configurations in the right sidebar
+- **Markdown preview search** — In-pane Ctrl+F search inside markdown previews and file previews
+- **Long MCP tool output collapse** — Auto-collapse oversized MCP tool results with a one-click expand
 - **Notifications** — Dock badge, sound, and system notifications on agent completion (configurable)
 - **Update notifications** — Automatic check for new releases on GitHub
+
+### Codex Agent
+
+Optional alternate agent backend powered by [`@openai/codex-sdk`](https://www.npmjs.com/package/@openai/codex-sdk). Pick **Codex Agent** (or **Codex Agent (worktree)**) from the agent preset list when creating a terminal.
+
+- **GPT-5.5 / 5.4 / 5.3-codex / o4-mini / o3 / GPT-4.1** — Switch models inline; ChatGPT login or OpenAI API key
+- **Sandbox modes** — `read-only`, `workspace-write`, or `danger-full-access`
+- **Approval policies** — `untrusted`, `on-request`, or `never` (auto)
+- **Worktree preset** — Spawn Codex in an isolated git worktree, same as the Claude worktree flow
+- **Session resume** — JSONL transcripts under `~/.codex/sessions/` are auto-indexed; resume hits a local cache so re-opening a thread is fast even with months of history
+- **Inline plan approval** — Codex `plan` items render as approvable blocks in the panel
+
+### OpenAI Direct (debug)
+
+Hidden behind `BAT_DEBUG=1`. Talks directly to the OpenAI Responses API via [`@ai-sdk/openai`](https://sdk.vercel.ai/), without the Codex CLI. Useful for testing tool flows against a raw model. Not recommended for daily use — Codex Agent is the supported path.
 
 ### Internationalization (i18n)
 - **English**, **Traditional Chinese (繁體中文)**, **Simplified Chinese (简体中文)**
@@ -221,13 +238,13 @@ Download from [Releases](https://github.com/tony1223/better-agent-terminal/relea
 2. Double-click the `.dmg` to mount it
 3. Drag **Better Agent Terminal** into the **Applications** folder
 4. On first launch, macOS may block the app — go to **System Settings > Privacy & Security**, scroll down and click **Open Anyway**
-5. Make sure [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) is installed (`npm install -g @anthropic-ai/claude-code`)
+5. The Claude Code binary is bundled — no separate install needed. (You can still `npm install -g @anthropic-ai/claude-code` if you prefer to use a system-wide CLI; BAT will pick the global one when present.)
 
 ### Option 4: Build from Source
 
 **Prerequisites:**
 - [Node.js](https://nodejs.org/) 18+
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated
+- A Claude account (sign in via `/login` inside the app, or pre-authenticate the [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) — the binary is bundled, no separate global install required)
 
 ```bash
 git clone https://github.com/tony1223/better-agent-terminal.git
@@ -281,8 +298,11 @@ better-agent-terminal/
 │   ├── main.ts                        # App entry, IPC handlers, window management
 │   ├── preload.ts                     # Context bridge (window.electronAPI)
 │   ├── pty-manager.ts                 # PTY process lifecycle, multi-window broadcast
-│   ├── claude-agent-manager.ts        # Claude SDK session management
-│   ├── codex-agent-manager.ts         # Codex/OpenAI agent integration
+│   ├── claude-agent-manager.ts        # Claude Agent SDK session management
+│   ├── codex-agent-manager.ts         # Codex CLI / Codex SDK session management
+│   ├── codex-agent/                   # Codex helpers (log path cache, etc.)
+│   ├── openai-agent-manager.ts        # OpenAI Direct (Responses API via @ai-sdk/openai)
+│   ├── openai-agent/                  # OpenAI helpers (skills scanner, models, persistence)
 │   ├── worktree-manager.ts            # Git worktree lifecycle (create, remove, rehydrate)
 │   ├── account-manager.ts             # Multi-account switching infrastructure
 │   ├── window-registry.ts             # Multi-window management
@@ -304,6 +324,9 @@ better-agent-terminal/
 │   │   ├── Sidebar.tsx                # Workspace list, groups, drag-drop, context menu
 │   │   ├── WorkspaceView.tsx          # Per-workspace container
 │   │   ├── ClaudeAgentPanel.tsx       # Claude agent chat UI, streaming, cache tracking
+│   │   ├── CodexAgentPanel.tsx        # Codex agent chat UI, plan approval, sandbox/approval controls
+│   │   ├── OpenAIAgentPanel.tsx       # OpenAI Direct chat UI (debug-gated)
+│   │   ├── CollapsedBar.tsx           # Collapsed-thread / hidden-pane indicator bar
 │   │   ├── TerminalPanel.tsx          # xterm.js terminal wrapper
 │   │   ├── ThumbnailBar.tsx           # Scrollable terminal thumbnail strip
 │   │   ├── MainPanel.tsx              # Tab container (Terminal / Files / Git)
@@ -352,9 +375,9 @@ better-agent-terminal/
 ### Tech Stack
 - **Frontend:** React 18 + TypeScript + i18next (EN / zh-TW / zh-CN)
 - **Terminal:** xterm.js + node-pty
-- **Framework:** Electron 28
-- **AI:** @anthropic-ai/claude-agent-sdk
-- **Build:** Vite 5 + electron-builder
+- **Framework:** Electron 41
+- **AI:** `@anthropic-ai/claude-agent-sdk` + bundled `@anthropic-ai/claude-code` binary (Claude); `@openai/codex-sdk` (Codex Agent); `@ai-sdk/openai` (OpenAI Direct, debug)
+- **Build:** Vite + electron-builder
 - **Storage:** better-sqlite3 (snippets, session data)
 - **Remote:** ws (WebSocket) + qrcode
 - **Syntax Highlighting:** highlight.js
@@ -523,17 +546,17 @@ Set the `BAT_DEBUG=1` environment variable to enable disk-based debug logging. L
 
 ### Version Format
 
-Follows semantic versioning: `vMAJOR.MINOR.PATCH` (e.g., `v2.1.41`)
+Follows semantic versioning: `vMAJOR.MINOR.PATCH` (e.g., `v2.2.27`)
 
-Pre-release versions use the `-pre.N` suffix (e.g., `v2.1.42-pre.1`). Tags containing `-pre` are automatically marked as pre-release on GitHub and do not update the Homebrew tap.
+Pre-release versions use the `-pre.N` suffix (e.g., `v2.2.28-pre.1`). Tags containing `-pre` are automatically marked as pre-release on GitHub and do not update the Homebrew tap.
 
 ### Automated Release (GitHub Actions)
 
 Push a tag to trigger builds for all platforms:
 
 ```bash
-git tag v2.1.42
-git push origin v2.1.42
+git tag v2.2.28
+git push origin v2.2.28
 ```
 
 ---
