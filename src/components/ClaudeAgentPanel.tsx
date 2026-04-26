@@ -1857,6 +1857,7 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
           { name: 'snippet', description: 'Show snippets to Claude for management', argumentHint: '' },
           { name: 'resume', description: 'Resume a previous session', argumentHint: '' },
           { name: 'model', description: 'Select model', argumentHint: '' },
+          { name: 'compact', description: 'Manually compact conversation context', argumentHint: '[instructions]' },
           { name: 'login', description: 'Sign in to Claude (switch account)', argumentHint: '' },
           { name: 'abort', description: 'Force stop current operation immediately', argumentHint: '' },
           { name: 'logout', description: 'Sign out of Claude', argumentHint: '' },

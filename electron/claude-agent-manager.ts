@@ -1884,16 +1884,33 @@ export class ClaudeAgentManager {
     session.metadata.maxOutputTokens = selectedModel.includes('haiku') ? 8192 : 64000
 
     // Model presets own their auto-compact target; global settings only apply to raw models.
+    const previousAutoCompactWindow = session.autoCompactWindow
     const resolvedAutoCompactWindow = autoCompactWindowForClaudeSelection(selectedModel, autoCompactWindow)
     session.autoCompactWindow = resolvedAutoCompactWindow || undefined
     session.metadata.autoCompactWindow = session.autoCompactWindow
     logger.log(`[setModel] autoCompactWindow=${session.autoCompactWindow || 'none'}`)
+    const compactChanged = previousAutoCompactWindow !== session.autoCompactWindow
 
     if (session.apiVersion === 'v2') {
-      // V2: model change takes effect on next send (session will be recreated in runQueryV2)
-      logger.log(`[setModel] V2 stored model ${selectedModel} for session ${sessionId.slice(0, 8)} (takes effect on next message)`)
+      // V2 env is fixed when the Claude Code process is created. If the compact
+      // target changed, close the runtime now so the next resume/send starts
+      // with the new CLAUDE_CODE_AUTO_COMPACT_WINDOW.
+      if (compactChanged && session.v2Session) {
+        try { session.v2Session.close() } catch { /* ignore */ }
+        session.v2Session = undefined
+        session.v2SessionModel = undefined
+        session.v2SessionAutoCompactWindow = undefined
+        logger.log(`[setModel] V2 runtime restarted for compact change on session ${sessionId.slice(0, 8)}`)
+      }
+      logger.log(`[setModel] V2 stored model ${selectedModel} for session ${sessionId.slice(0, 8)}${compactChanged ? ' (runtime will use new compact env)' : ' (takes effect on next message)'}`)
       this.send('claude:status', sessionId, { ...session.metadata })
       return true
+    }
+
+    if (compactChanged && session.queryInstance) {
+      try { session.queryInstance.close() } catch { /* ignore */ }
+      session.queryInstance = undefined
+      logger.log(`[setModel] V1 runtime restarted for compact change on session ${sessionId.slice(0, 8)}`)
     }
 
     if (!session.queryInstance) {
