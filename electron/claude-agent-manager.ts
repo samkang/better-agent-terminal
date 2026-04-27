@@ -535,11 +535,11 @@ export class ClaudeAgentManager {
   }
 
   /** Internal send used by both public sendMessage and auto-continue. Skips the
-   *  budget reset and lets the caller customise the broadcast user-message
-   *  display string (e.g. with an "[auto N/M]" tag). */
+   *  budget reset and lets the caller customise the broadcast message. */
   private async _doSendMessage(
     session: SessionInstance, sessionId: string, prompt: string,
     images: string[] | undefined, displayContent: string,
+    displayOptions?: { kind?: ClaudeMessage['kind']; autoContinue?: NonNullable<ClaudeMessage['autoContinue']> },
   ): Promise<boolean> {
     // Auto-wake resting sessions
     if (session.isResting) {
@@ -567,16 +567,28 @@ export class ClaudeAgentManager {
       return true
     }
 
-    // Broadcast user message so all windows (including remote host) can see it.
-    // The sender's frontend already adds it locally; dedup by id prevents doubles.
-    const userMsg: ClaudeMessage = {
-      id: `user-${Date.now()}`,
-      sessionId,
-      role: 'user',
-      content: displayContent,
-      timestamp: Date.now(),
+    if (displayOptions?.kind === 'auto-continue' && displayOptions.autoContinue) {
+      this.addMessage(sessionId, {
+        id: `sys-auto-${Date.now()}`,
+        sessionId,
+        role: 'system',
+        kind: 'auto-continue',
+        autoContinue: displayOptions.autoContinue,
+        content: displayContent,
+        timestamp: Date.now(),
+      })
+    } else {
+      // Broadcast user message so all windows (including remote host) can see it.
+      // The sender's frontend already adds it locally; dedup by id prevents doubles.
+      const userMsg: ClaudeMessage = {
+        id: `user-${Date.now()}`,
+        sessionId,
+        role: 'user',
+        content: displayContent,
+        timestamp: Date.now(),
+      }
+      this.addMessage(sessionId, userMsg)
     }
-    this.addMessage(sessionId, userMsg)
 
     await this.runQuery(sessionId, prompt, images)
     return true
@@ -654,9 +666,12 @@ export class ClaudeAgentManager {
         return
       }
       current.used++
-      const displayContent = `${current.prompt}  [auto ${current.used}/${current.max}]`
+      const displayContent = `Auto-continue ${current.used}/${current.max} · prompt: ${current.prompt}`
       logger.log(`[Claude auto] continue sessionId=${sessionId} used=${current.used}/${current.max} subtype=${subtype || 'none'}`)
-      this._doSendMessage(s, sessionId, current.prompt, undefined, displayContent).catch((error) => {
+      this._doSendMessage(s, sessionId, current.prompt, undefined, displayContent, {
+        kind: 'auto-continue',
+        autoContinue: { used: current.used, max: current.max, prompt: current.prompt },
+      }).catch((error) => {
         logger.error(`[Claude auto] send failed sessionId=${sessionId}`, error)
       })
     })

@@ -3081,6 +3081,24 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
 
     const msg = item as ClaudeMessage
     if (msg.role === 'system') {
+      if (msg.kind === 'auto-continue') {
+        const auto = msg.autoContinue
+        const prompt = auto?.prompt ?? msg.content
+        return (
+          <div key={msg.id || index} className="tl-item tl-item-system tl-item-auto-continue">
+            <div className="tl-dot dot-auto-continue" />
+            <div className="tl-content claude-message-auto-continue">
+              <span className="claude-auto-continue-label">
+                Auto-continue{auto ? ` ${auto.used}/${auto.max}` : ''}
+              </span>
+              <span className="claude-auto-continue-prompt" title={prompt}>{prompt}</span>
+              {msg.timestamp > 0 && (
+                <span className="claude-msg-time" title={formatFullTimestamp(msg.timestamp)}>{formatTimestamp(msg.timestamp)}</span>
+              )}
+            </div>
+          </div>
+        )
+      }
       return (
         <div key={msg.id || index} className="tl-item tl-item-system">
           <div className="tl-dot dot-system" />

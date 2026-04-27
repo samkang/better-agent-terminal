@@ -3,6 +3,8 @@ export interface ClaudeMessage {
   sessionId: string
   role: 'user' | 'assistant' | 'system'
   content: string
+  kind?: 'auto-continue'
+  autoContinue?: { used: number; max: number; prompt: string }
   thinking?: string
   parentToolUseId?: string
   timestamp: number
