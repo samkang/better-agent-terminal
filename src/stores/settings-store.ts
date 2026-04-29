@@ -37,6 +37,9 @@ const defaultSettings: AppSettings = {
   allowBypassPermissions: true,
   defaultEffort: 'high',
   defaultCodexEffort: 'high',
+  remoteServerAutoStart: false,
+  remoteServerPort: 9876,
+  remoteServerBindInterface: 'localhost',
 }
 
 class SettingsStore {
@@ -294,6 +297,24 @@ class SettingsStore {
 
   setNotifyOnlyBackground(enabled: boolean): void {
     this.settings = { ...this.settings, notifyOnlyBackground: enabled }
+    this.notify()
+    this.save()
+  }
+
+  setRemoteServerAutoStart(enabled: boolean): void {
+    this.settings = { ...this.settings, remoteServerAutoStart: enabled }
+    this.notify()
+    this.save()
+  }
+
+  setRemoteServerPort(port: number): void {
+    this.settings = { ...this.settings, remoteServerPort: port }
+    this.notify()
+    this.save()
+  }
+
+  setRemoteServerBindInterface(bindInterface: 'localhost' | 'tailscale' | 'all'): void {
+    this.settings = { ...this.settings, remoteServerBindInterface: bindInterface }
     this.notify()
     this.save()
   }

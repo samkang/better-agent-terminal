@@ -55,9 +55,9 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
 
   // Remote server state
   const [serverStatus, setServerStatus] = useState<RemoteServerStatus>({ running: false, port: null, fingerprint: null, bindInterface: null, boundHost: null, clients: [] })
-  const [serverPort, setServerPort] = useState('9876')
+  const [serverPort, setServerPort] = useState(String(settings.remoteServerPort || 9876))
   const [serverToken, setServerToken] = useState<string | null>(null)
-  const [bindInterface, setBindInterface] = useState<BindInterface>('localhost')
+  const [bindInterface, setBindInterface] = useState<BindInterface>(settings.remoteServerBindInterface || 'localhost')
   const [clientStatus, setClientStatus] = useState<RemoteClientStatus>({ connected: false, info: null })
 
   // OpenAI API key state
@@ -110,6 +110,12 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
       setSettings(settingsStore.getSettings())
     })
   }, [])
+
+  useEffect(() => {
+    if (serverStatus.running) return
+    setServerPort(String(settings.remoteServerPort || 9876))
+    setBindInterface(settings.remoteServerBindInterface || 'localhost')
+  }, [settings.remoteServerPort, settings.remoteServerBindInterface, serverStatus.running])
 
   useEffect(() => {
     if (!isDebugMode) return
@@ -287,8 +293,11 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   })()
 
   const handleStartServer = async () => {
+    const port = parseInt(serverPort) || 9876
+    settingsStore.setRemoteServerPort(port)
+    settingsStore.setRemoteServerBindInterface(bindInterface)
     const result = await window.electronAPI.remote.startServer({
-      port: parseInt(serverPort) || 9876,
+      port,
       bindInterface,
     })
     if ('error' in result) {
@@ -832,6 +841,18 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 </a>。
               </p>
 
+              <div className="settings-group checkbox-group">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={settings.remoteServerAutoStart === true}
+                    onChange={e => settingsStore.setRemoteServerAutoStart(e.target.checked)}
+                  />
+                  {t('settings.remoteServerAutoStart')}
+                </label>
+                <p className="settings-hint">{t('settings.remoteServerAutoStartHint')}</p>
+              </div>
+
               {serverStatus.running ? (
                 <>
                   <div className="settings-group" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -890,8 +911,27 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               ) : (
                 <div className="settings-group">
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <input type="number" value={serverPort} onChange={e => setServerPort(e.target.value)} placeholder={t('settings.port')} style={{ width: 80 }} />
-                    <select value={bindInterface} onChange={e => setBindInterface(e.target.value as BindInterface)} style={{ fontSize: 12 }} title={t('settings.bindInterfaceHint', 'Network interface to listen on')}>
+                    <input
+                      type="number"
+                      value={serverPort}
+                      onChange={e => {
+                        setServerPort(e.target.value)
+                        const port = parseInt(e.target.value)
+                        if (Number.isFinite(port) && port > 0) settingsStore.setRemoteServerPort(port)
+                      }}
+                      placeholder={t('settings.port')}
+                      style={{ width: 80 }}
+                    />
+                    <select
+                      value={bindInterface}
+                      onChange={e => {
+                        const value = e.target.value as BindInterface
+                        setBindInterface(value)
+                        settingsStore.setRemoteServerBindInterface(value)
+                      }}
+                      style={{ fontSize: 12 }}
+                      title={t('settings.bindInterfaceHint', 'Network interface to listen on')}
+                    >
                       <option value="localhost">{t('settings.bindLocalhost', 'localhost (this machine only)')}</option>
                       <option value="tailscale">{t('settings.bindTailscale', 'Tailscale (tailnet only)')}</option>
                       <option value="all">{t('settings.bindAll', 'All interfaces (LAN / public)')}</option>

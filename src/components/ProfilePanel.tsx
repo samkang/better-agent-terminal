@@ -57,6 +57,10 @@ export function ProfilePanel({ onClose, onSwitchNewWindow, onProfileRenamed }: P
   const [editRemoteProfiles, setEditRemoteProfiles] = useState<RemoteProfileOption[]>([])
   const [editSelectedRemoteProfileId, setEditSelectedRemoteProfileId] = useState<string>('')
   const [editFetchingRemoteProfiles, setEditFetchingRemoteProfiles] = useState(false)
+  const [siblingSourceId, setSiblingSourceId] = useState<string | null>(null)
+  const [siblingProfiles, setSiblingProfiles] = useState<RemoteProfileOption[]>([])
+  const [siblingLoading, setSiblingLoading] = useState(false)
+  const [siblingError, setSiblingError] = useState('')
   const createInputRef = useRef<HTMLInputElement>(null)
   const editInputRef = useRef<HTMLInputElement>(null)
 
@@ -135,12 +139,13 @@ export function ProfilePanel({ onClose, onSwitchNewWindow, onProfileRenamed }: P
         else if (editingId) { setEditingId(null); setEditValue('') }
         else if (editingRemoteId) { setEditingRemoteId(null) }
         else if (confirmDelete) { setConfirmDelete(null) }
+        else if (siblingSourceId) { setSiblingSourceId(null); setSiblingProfiles([]); setSiblingError('') }
         else onClose()
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [creating, editingId, confirmDelete, onClose])
+  }, [creating, editingId, confirmDelete, siblingSourceId, onClose])
 
   const fetchRemoteProfileList = async (host: string, port: number, token: string, fingerprint: string): Promise<RemoteProfileOption[]> => {
     const result = await window.electronAPI.remote.listProfiles(host, port, token, fingerprint)
@@ -280,6 +285,64 @@ export function ProfilePanel({ onClose, onSwitchNewWindow, onProfileRenamed }: P
       setTestingId(null)
     }
   }, [])
+
+  const handleOpenSiblingPicker = async (profile: ProfileEntry) => {
+    if (!profile.remoteHost || !profile.remoteToken || !profile.remoteFingerprint) return
+    setSiblingSourceId(profile.id)
+    setSiblingProfiles([])
+    setSiblingError('')
+    setSiblingLoading(true)
+    try {
+      const profiles = await fetchRemoteProfileList(
+        profile.remoteHost,
+        profile.remotePort || 9876,
+        profile.remoteToken,
+        profile.remoteFingerprint
+      )
+      const currentTargetId = profile.remoteProfileId || 'default'
+      setSiblingProfiles(profiles.filter(rp => rp.id !== currentTargetId))
+    } catch (err) {
+      setSiblingError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSiblingLoading(false)
+    }
+  }
+
+  const handleOpenSiblingProfile = async (remoteProfile: RemoteProfileOption) => {
+    const source = profiles.find(p => p.id === siblingSourceId)
+    if (!source?.remoteHost || !source.remoteToken || !source.remoteFingerprint) return
+    const port = source.remotePort || 9876
+    const existing = profiles.find(p =>
+      p.type === 'remote' &&
+      p.remoteHost === source.remoteHost &&
+      (p.remotePort || 9876) === port &&
+      p.remoteFingerprint === source.remoteFingerprint &&
+      (p.remoteProfileId || 'default') === remoteProfile.id
+    )
+
+    let targetProfileId = existing?.id
+    if (existing) {
+      if (existing.remoteToken !== source.remoteToken) {
+        await window.electronAPI.profile.update(existing.id, { remoteToken: source.remoteToken })
+      }
+    } else {
+      const entry = await window.electronAPI.profile.create(`${remoteProfile.name} @ ${source.remoteHost}`, {
+        type: 'remote',
+        remoteHost: source.remoteHost,
+        remotePort: port,
+        remoteToken: source.remoteToken,
+        remoteFingerprint: source.remoteFingerprint,
+        remoteProfileId: remoteProfile.id,
+      })
+      targetProfileId = entry.id
+    }
+
+    setSiblingSourceId(null)
+    setSiblingProfiles([])
+    setSiblingError('')
+    await loadProfiles()
+    if (targetProfileId) onSwitchNewWindow(targetProfileId)
+  }
 
   const handleSaveCurrent = async () => {
     if (windowProfileId) {
@@ -558,6 +621,18 @@ export function ProfilePanel({ onClose, onSwitchNewWindow, onProfileRenamed }: P
                 <div className="profile-item-actions" onClick={e => e.stopPropagation()}>
                   {profile.type === 'remote' && (
                     <button
+                      className="profile-icon-btn"
+                      title={t('profiles.openRemoteSibling')}
+                      onClick={() => handleOpenSiblingPicker(profile)}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M5 12h14" />
+                        <path d="M12 5l7 7-7 7" />
+                      </svg>
+                    </button>
+                  )}
+                  {profile.type === 'remote' && (
+                    <button
                       className={`profile-icon-btn ${testResult[profile.id] === 'ok' ? 'success' : testResult[profile.id] === 'fail' ? 'danger' : ''}`}
                       title={testResult[profile.id] === 'ok' ? t('profiles.connected') : testResult[profile.id] === 'fail' ? t('profiles.connectionFailed') : t('profiles.testConnection')}
                       onClick={() => handleTestConnection(profile)}
@@ -639,6 +714,39 @@ export function ProfilePanel({ onClose, onSwitchNewWindow, onProfileRenamed }: P
           })()}
         </div>
       </div>
+
+      {siblingSourceId && (
+        <div className="settings-overlay" style={{ zIndex: 1001 }} onClick={() => { setSiblingSourceId(null); setSiblingProfiles([]); setSiblingError('') }}>
+          <div className="settings-panel" onClick={e => e.stopPropagation()} style={{ maxWidth: 420, padding: 20 }}>
+            <h3 style={{ margin: '0 0 12px' }}>{t('profiles.openRemoteSibling')}</h3>
+            {siblingLoading && <p style={{ margin: '0 0 12px', color: '#aaa' }}>{t('profiles.fetchingProfiles')}</p>}
+            {siblingError && <p style={{ margin: '0 0 12px', color: '#e5534b' }}>{siblingError}</p>}
+            {!siblingLoading && !siblingError && siblingProfiles.length === 0 && (
+              <p style={{ margin: '0 0 12px', color: '#aaa' }}>{t('profiles.noRemoteProfiles')}</p>
+            )}
+            {siblingProfiles.length > 0 && (
+              <div className="profile-list" style={{ marginBottom: 12 }}>
+                {siblingProfiles.map(rp => (
+                  <button
+                    key={rp.id}
+                    className="profile-item"
+                    onClick={() => handleOpenSiblingProfile(rp)}
+                    style={{ width: '100%', textAlign: 'left', background: 'transparent', color: 'inherit' }}
+                  >
+                    <span className="profile-item-info">
+                      <span className="profile-item-name">{rp.name}</span>
+                      <span className="profile-item-meta">{rp.id}{rp.type === 'remote' ? ` · ${t('profiles.remote')}` : ''}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button className="profile-action-btn" onClick={() => { setSiblingSourceId(null); setSiblingProfiles([]); setSiblingError('') }}>{t('common.cancel')}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Confirm delete dialog */}
       {confirmDelete && (
