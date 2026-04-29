@@ -48,6 +48,19 @@ function linuxClaudeArchCandidates(): string[] {
   return [`linux-${arch}`, `linux-${arch}-musl`]
 }
 
+function getPosixAutoShell(): string {
+  if (process.env.SHELL && fsSync.existsSync(process.env.SHELL)) {
+    return process.env.SHELL
+  }
+  if (process.platform === 'darwin') {
+    return '/bin/zsh'
+  }
+  if (fsSync.existsSync('/bin/bash')) {
+    return '/bin/bash'
+  }
+  return '/bin/sh'
+}
+
 export interface ProxiedHandlersDeps {
   getPtyManager: () => PtyManager | null
   getClaudeManager: () => ClaudeAgentManager | null
@@ -152,7 +165,7 @@ export function registerProxiedHandlers(deps: ProxiedHandlersDeps): void {
 
     let result: string
     if (process.platform === 'darwin' || process.platform === 'linux') {
-      if (shellType === 'auto') result = process.env.SHELL || '/bin/zsh'
+      if (shellType === 'auto') result = getPosixAutoShell()
       else if (shellType === 'zsh') result = '/bin/zsh'
       else if (shellType === 'bash') {
         if (fsSync.existsSync('/opt/homebrew/bin/bash')) result = '/opt/homebrew/bin/bash'
@@ -160,7 +173,7 @@ export function registerProxiedHandlers(deps: ProxiedHandlersDeps): void {
         else result = '/bin/bash'
       }
       else if (shellType === 'sh') result = '/bin/sh'
-      else if (shellType === 'pwsh' || shellType === 'powershell' || shellType === 'cmd') result = process.env.SHELL || '/bin/zsh'
+      else if (shellType === 'pwsh' || shellType === 'powershell' || shellType === 'cmd') result = getPosixAutoShell()
       else result = shellType
     } else {
       if (shellType === 'auto' || shellType === 'pwsh') {

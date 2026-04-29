@@ -174,11 +174,14 @@ export class PtyManager {
       }
       return 'powershell.exe'
     } else if (process.platform === 'darwin') {
-      return process.env.SHELL || '/bin/zsh'
+      if (process.env.SHELL && fs.existsSync(process.env.SHELL)) {
+        return process.env.SHELL
+      }
+      return '/bin/zsh'
     } else {
       // Linux - detect available shell
       const fs = require('fs')
-      if (process.env.SHELL) {
+      if (process.env.SHELL && fs.existsSync(process.env.SHELL)) {
         return process.env.SHELL
       } else if (fs.existsSync('/bin/bash')) {
         return '/bin/bash'
