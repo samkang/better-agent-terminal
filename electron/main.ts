@@ -171,13 +171,72 @@ const sessionManagerMap = new Map<string, 'claude' | 'codex' | 'openai'>()
 let updateCheckResult: UpdateCheckResult | null = null
 const profileManager = new ProfileManager()
 const remoteServer = new RemoteServer()
-let remoteClient: RemoteClient | null = null
-// profileId currently bound to the active remoteClient. Used to filter
-// remote-event broadcasts so only windows on this remote profile receive
-// them — local-profile windows must not see foreign session traffic.
-let remoteClientProfileId: string | null = null
+const remoteClientsByProfileId = new Map<string, RemoteClient>()
 const detachedWindows = new Map<string, BrowserWindow>() // workspaceId → BrowserWindow
 let isAppQuitting = false // Distinguishes Cmd+Q (preserve) from Cmd+W (remove window)
+
+type RemoteBindInterface = 'localhost' | 'tailscale' | 'all'
+
+function normalizeRemoteBindInterface(value: unknown): RemoteBindInterface {
+  return value === 'tailscale' || value === 'all' ? value : 'localhost'
+}
+
+function getRemoteClient(profileId: string | null | undefined): RemoteClient | null {
+  if (!profileId) return null
+  return remoteClientsByProfileId.get(profileId) ?? null
+}
+
+function setRemoteClient(profileId: string | null | undefined, client: RemoteClient): void {
+  if (!profileId) {
+    try { client.disconnect() } catch { /* ignore */ }
+    return
+  }
+  try { remoteClientsByProfileId.get(profileId)?.disconnect() } catch { /* ignore */ }
+  remoteClientsByProfileId.set(profileId, client)
+}
+
+function disconnectRemoteClient(profileId: string | null | undefined): void {
+  if (!profileId) return
+  try { remoteClientsByProfileId.get(profileId)?.disconnect() } catch { /* ignore */ }
+  remoteClientsByProfileId.delete(profileId)
+}
+
+function disconnectAllRemoteClients(): void {
+  for (const client of remoteClientsByProfileId.values()) {
+    try { client.disconnect() } catch { /* ignore */ }
+  }
+  remoteClientsByProfileId.clear()
+}
+
+function readStartupSettings(): { remoteServerAutoStart?: boolean; remoteServerPort?: number; remoteServerBindInterface?: RemoteBindInterface } {
+  try {
+    const configPath = path.join(app.getPath('userData'), 'settings.json')
+    const raw = fsSync.readFileSync(configPath, 'utf-8')
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    return {
+      remoteServerAutoStart: parsed.remoteServerAutoStart === true,
+      remoteServerPort: typeof parsed.remoteServerPort === 'number' ? parsed.remoteServerPort : undefined,
+      remoteServerBindInterface: normalizeRemoteBindInterface(parsed.remoteServerBindInterface),
+    }
+  } catch {
+    return {}
+  }
+}
+
+async function maybeAutoStartRemoteServer(defaultWindowId: string | null): Promise<void> {
+  const settings = readStartupSettings()
+  if (settings.remoteServerAutoStart !== true || remoteServer.isRunning) return
+  remoteServer.setDefaultWindowId(defaultWindowId)
+  try {
+    const result = await remoteServer.start({
+      port: settings.remoteServerPort || 9876,
+      bindInterface: settings.remoteServerBindInterface || 'localhost',
+    })
+    logger.log(`[RemoteServer] auto-started on ${result.boundHost}:${result.port} (iface=${result.bindInterface})`)
+  } catch (err) {
+    logger.error('[RemoteServer] auto-start failed:', err instanceof Error ? err.message : String(err))
+  }
+}
 
 /** Attach a will-resize throttle to a BrowserWindow to reduce DWM pressure on Windows. */
 function setupResizeThrottle(win: BrowserWindow, label: string) {
@@ -423,6 +482,7 @@ function createWindow(windowId: string, bounds?: { x: number; y: number; width: 
 
       if (profileWindowCount <= 1) {
         // Last window in profile — preserve snapshot but mark profile inactive
+        disconnectRemoteClient(entry.profileId)
         await profileManager.deactivateProfile(entry.profileId!)
         win.destroy()
         return
@@ -437,6 +497,7 @@ function createWindow(windowId: string, bounds?: { x: number; y: number; width: 
           e.profileId === profileId && windowMap.has(e.id) && e.id !== windowId
         )
         if (remaining.length === 0) {
+          disconnectRemoteClient(profileId)
           await profileManager.deactivateProfile(profileId)
         }
         win.destroy()
@@ -466,6 +527,7 @@ function createWindow(windowId: string, bounds?: { x: number; y: number; width: 
           e.profileId === profileId && windowMap.has(e.id) && e.id !== windowId
         )
         if (remaining.length === 0) {
+          disconnectRemoteClient(profileId)
           await profileManager.deactivateProfile(profileId)
         }
       }
@@ -494,7 +556,7 @@ function createWindow(windowId: string, bounds?: { x: number; y: number; width: 
 }
 
 function cleanupAllProcesses() {
-  try { remoteClient?.disconnect() } catch { /* ignore */ }
+  disconnectAllRemoteClients()
   try { remoteServer.stop() } catch { /* ignore */ }
   try { claudeManager?.killAll() } catch { /* ignore */ }
   try { claudeManager?.dispose() } catch { /* ignore */ }
@@ -504,8 +566,6 @@ function cleanupAllProcesses() {
   try { openaiManager?.dispose() } catch { /* ignore */ }
   try { ptyManager?.dispose() } catch { /* ignore */ }
   try { snippetDb.close() } catch { /* ignore */ }
-  remoteClient = null
-  remoteClientProfileId = null
   claudeManager = null
   codexManager = null
   openaiManager = null
@@ -561,10 +621,7 @@ async function loadProfileSnapshotDetailed(profileId: string): Promise<SnapshotL
           logger.error(`[profile] remote connect failed for profile ${profileId} (${host}:${port})`)
           return { kind: 'remote-unreachable', host, port, label }
         }
-        // Replace any previous connection cleanly.
-        try { remoteClient?.disconnect() } catch { /* ignore */ }
-        remoteClient = client
-        remoteClientProfileId = profileId
+        setRemoteClient(profileId, client)
         const targetProfileId = profileEntry.remoteProfileId || 'default'
         const snapshot = await client.invoke('profile:load-snapshot', [targetProfileId]) as ProfileSnapshot | null
         logger.log(`[profile] remote profile ${profileId} → got ${snapshot?.windows?.length ?? 0} window(s) from remote (target: ${targetProfileId})`)
@@ -759,6 +816,8 @@ app.whenReady().then(async () => {
     }
   }
 
+  await maybeAutoStartRemoteServer(windowsToCreate[0]?.id ?? null)
+
   // Show any remote-unreachable notifications after windows are created
   for (const fail of unreachableFailures) {
     showRemoteUnreachableDialog(fail.host, fail.port, fail.label)
@@ -911,14 +970,17 @@ function bindProxiedHandlersToIpc() {
       // proxies to the remote server; a local profile window stays local
       // even if another window has an active remote connection.
       let senderIsRemote = false
+      let senderProfileId: string | null = null
       if (windowId) {
         const entry = await windowRegistry.getEntry(windowId)
         if (entry?.profileId) {
+          senderProfileId = entry.profileId
           const profile = await profileManager.getProfile(entry.profileId)
           senderIsRemote = profile?.type === 'remote'
         }
       }
 
+      const remoteClient = getRemoteClient(senderProfileId)
       if (senderIsRemote && remoteClient?.isConnected) {
         return remoteClient.invoke(channel, args)
       }
@@ -1088,26 +1150,23 @@ function registerLocalHandlers() {
         const senderWindowId = getWindowIdByWebContents(event.sender)
         const senderEntry = senderWindowId ? await windowRegistry.getEntry(senderWindowId) : null
         const boundProfileId = senderEntry?.profileId ?? null
-        // Drop any previous connection before creating a new one.
-        try { remoteClient?.disconnect() } catch { /* ignore */ }
         const client = new RemoteClient(() => getWindowsForProfile(boundProfileId))
         const ok = await client.connect({ host, port, token, fingerprint, label })
         if (!ok) {
           return { error: 'Connection failed (auth rejected, unreachable, or fingerprint mismatch)' }
         }
-        remoteClient = client
-        remoteClientProfileId = boundProfileId
+        setRemoteClient(boundProfileId, client)
         return { connected: true }
       } catch (err: unknown) {
         return { error: err instanceof Error ? err.message : String(err) }
       }
     })
   })
-  ipcMain.handle('remote:disconnect', async () => {
+  ipcMain.handle('remote:disconnect', async (event) => {
     return withRemoteClientLock(async () => {
-      try { remoteClient?.disconnect() } catch { /* ignore */ }
-      remoteClient = null
-      remoteClientProfileId = null
+      const senderWindowId = getWindowIdByWebContents(event.sender)
+      const senderEntry = senderWindowId ? await windowRegistry.getEntry(senderWindowId) : null
+      disconnectRemoteClient(senderEntry?.profileId ?? null)
       return true
     })
   })
@@ -1115,7 +1174,8 @@ function registerLocalHandlers() {
     const senderWindowId = getWindowIdByWebContents(event.sender)
     const senderEntry = senderWindowId ? await windowRegistry.getEntry(senderWindowId) : null
     const senderProfileId = senderEntry?.profileId ?? null
-    const connected = !!remoteClient?.isConnected && !!remoteClientProfileId && senderProfileId === remoteClientProfileId
+    const remoteClient = getRemoteClient(senderProfileId)
+    const connected = !!remoteClient?.isConnected
     return {
       connected,
       info: connected ? remoteClient?.connectionInfo ?? null : null,

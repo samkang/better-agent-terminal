@@ -16,10 +16,19 @@ import { buildToolCallFromResponseItem, resultFromResponseItemOutput } from './c
 import { getCodexClass } from './codex-agent/sdk'
 import { listCodexSessionSummaries, loadSessionHistoryItems, readModelFromSessionLog } from './codex-agent/session-log'
 import { appendThinkingFromItem, handleItemCompleted, handleItemStarted, handleItemUpdated, type CodexStreamItemSink, type CodexStreamItemState } from './codex-agent/stream-items'
+import { applyCxEnvironment } from './semantic-navigation'
 import type { CodexApprovalPolicy, CodexSandboxMode, CodexSessionInstance, HistoryItem, SessionMetadata } from './codex-agent/types'
 
 const sdkThreadIds = new Map<string, string>()
 const WORKTREE_DIR_NAME = '.bat-worktrees'
+
+function toStringEnv(env: NodeJS.ProcessEnv): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [key, value] of Object.entries(env)) {
+    if (typeof value === 'string') out[key] = value
+  }
+  return out
+}
 
 export class CodexAgentManager {
   private sessions: Map<string, CodexSessionInstance> = new Map()
@@ -336,6 +345,7 @@ export class CodexAgentManager {
       const Codex = await getCodexClass() as new (opts: Record<string, unknown>) => unknown
       const codex = new Codex({
         codexPathOverride: codexPath,
+        env: toStringEnv(applyCxEnvironment({ ...process.env })),
         config: {
           show_raw_agent_reasoning: true,
         },

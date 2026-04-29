@@ -8,7 +8,7 @@ import { EFFORT_LEVELS } from '../types'
 import { normalizeAgentParams } from '../types/agent-profiles'
 import { settingsStore } from '../stores/settings-store'
 import { workspaceStore } from '../stores/workspace-store'
-import type { AgentPresetId } from '../types/agent-presets'
+import { getAgentPreset, type AgentPresetId } from '../types/agent-presets'
 import { LinkedText, FilePreviewModal } from './PathLinker'
 import { ChatMarkdown } from './ChatMarkdown'
 import { filenameForPastedImage, readFileAsDataUrl } from '../utils/file-data-url'
@@ -27,13 +27,13 @@ interface SessionMeta {
   numTurns: number
   contextWindow: number
   autoCompactWindow?: number
-  maxOutputTokens: number
-  contextTokens: number
-  cacheReadTokens: number
-  cacheCreationTokens: number
-  callCacheRead: number
-  callCacheWrite: number
-  lastQueryCalls: number
+  maxOutputTokens?: number
+  contextTokens?: number
+  cacheReadTokens?: number
+  cacheCreationTokens?: number
+  callCacheRead?: number
+  callCacheWrite?: number
+  lastQueryCalls?: number
   permissionMode?: string
   modelUsage?: Record<string, { inputTokens: number; outputTokens: number; cacheReadInputTokens: number; cacheCreationInputTokens: number; costUSD: number }>
   cacheWrite5mTokens?: number
@@ -209,6 +209,7 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
     }
     return null
   })
+  const markdownCwd = worktreeInfo?.worktreePath || terminal?.worktreePath || cwd
   const [promptSuggestion, setPromptSuggestion] = useState<string | null>(null)
   const [isResumingHistory, setIsResumingHistory] = useState(false)
   const [activePlanFile, setActivePlanFile] = useState<string | null>(null)
@@ -1026,7 +1027,7 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
             timestamp: Date.now(),
           }])
           setIsStreaming(true)
-          window.electronAPI.claude.sendMessage(sessionId, prompt, images, getAutoCompactWindowForModel(currentModel, globalSettings.autoCompactWindow))
+          window.electronAPI.claude.sendMessage(sessionId, prompt, images, getAutoCompactWindowForModel(currentModel, settingsStore.getSettings().autoCompactWindow))
         } else {
           dlog2(`${tag} onHistory setting messages (history only, no pending prompt)`)
           setMessages(historyItems)
@@ -1836,10 +1837,10 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
 
   const handlePermissionModeCycle = useCallback(async () => {
     const allowBypass = settingsStore.getSettings().allowBypassPermissions
-    const availableModes = allowBypass
+    const availableModes: readonly (typeof permissionModes[number])[] = allowBypass
       ? permissionModes
       : permissionModes.filter(m => m !== 'bypassPermissions' && m !== 'bypassPlan')
-    const idx = availableModes.indexOf(permissionMode as typeof availableModes[number])
+    const idx = availableModes.indexOf(permissionMode as typeof permissionModes[number])
     const nextMode = availableModes[(idx + 1) % availableModes.length]
     setPermissionMode(nextMode)
     await window.electronAPI.claude.setPermissionMode(sessionId, nextMode)
@@ -2653,7 +2654,7 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
             <div className="tl-content">
               <div className="claude-tool-header" onClick={() => toggleTool(item.id)}>
                 <span className="claude-tool-name">{item.toolName === 'Agent' ? 'Agent' : 'Task'}</span>
-                {item.input.subagent_type && <span className="claude-tool-badge">{String(item.input.subagent_type)}</span>}
+                {Boolean(item.input.subagent_type) && <span className="claude-tool-badge">{String(item.input.subagent_type)}</span>}
                 {desc && <span className="claude-tool-desc">{desc}</span>}
                 {item.status === 'running' && item.timestamp > 0 && (
                   <span className="claude-task-tag claude-task-elapsed">{formatElapsed(item.timestamp)}</span>
@@ -2889,8 +2890,8 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
             <div className="tl-content">
               <div className="claude-tool-header" onClick={() => toggleTool(item.id)}>
                 <span className="claude-tool-name">TaskOutput</span>
-                {parentTask?.input.subagent_type && (
-                  <span className="claude-tool-badge">{String(parentTask.input.subagent_type)}</span>
+                {Boolean(parentTask?.input.subagent_type) && (
+                  <span className="claude-tool-badge">{String(parentTask?.input.subagent_type)}</span>
                 )}
                 {parentTask && (
                   <span
@@ -3160,7 +3161,7 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
             )
           })()}
           {msg.content && (
-            <ChatMarkdown text={msg.content} cwd={cwd} />
+            <ChatMarkdown text={msg.content} cwd={markdownCwd} />
           )}
           {msg.timestamp > 0 && (
             <span className="claude-msg-time" title={formatFullTimestamp(msg.timestamp)}>{formatTimestamp(msg.timestamp)}</span>
@@ -3173,7 +3174,10 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
   return (
     <div
       className="claude-agent-panel"
-      style={{ '--claude-font-size': `${claudeFontSize}px` } as React.CSSProperties}
+      style={{
+        '--claude-font-size': `${claudeFontSize}px`,
+        ...(getAgentPreset(terminal?.agentPreset ?? '')?.color ? { '--agent-color': getAgentPreset(terminal?.agentPreset ?? '')!.color } : {}),
+      } as React.CSSProperties}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -3224,7 +3228,7 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
                 {progressDesc && !isStalled && <span className="claude-active-task-progress">{progressDesc}</span>}
                 {isStalled && <span className="claude-active-task-stalled">{t('claude.stalled')}</span>}
                 <span className="claude-active-task-time">{formatElapsed(task.timestamp)}</span>
-                {task.input.run_in_background && <span className="claude-task-tag">{t('claude.bg')}</span>}
+                {Boolean(task.input.run_in_background) && <span className="claude-task-tag">{t('claude.bg')}</span>}
                 <button className="claude-task-stop-btn" onClick={(e) => {
                   e.stopPropagation()
                   window.electronAPI.claude.stopTask(sessionId, task.id)
@@ -3344,7 +3348,7 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
               {pendingPermission.decisionReason}
             </div>
           )}
-          {pendingPermission.input.description && (
+          {Boolean(pendingPermission.input.description) && (
             <div className="claude-permission-desc">
               {String(pendingPermission.input.description)}
             </div>
@@ -3892,7 +3896,7 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
             {contentModal.markdown ? (
               <ChatMarkdown
                 text={contentModal.content}
-                cwd={cwd}
+                cwd={markdownCwd}
                 className="claude-plan-modal-body claude-plan-modal-markdown claude-markdown"
               />
             ) : (

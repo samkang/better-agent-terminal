@@ -74,7 +74,7 @@ export function normalizeAgentParams(
   for (const definition of definitions) {
     const currentValue = params?.[definition.key]
     normalized[definition.key] = isValidAgentParamValue(definition, currentValue)
-      ? currentValue
+      ? currentValue as AgentParamValue
       : definition.defaultValue
   }
 

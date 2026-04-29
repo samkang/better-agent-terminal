@@ -10,13 +10,13 @@ export interface SessionMeta {
   durationMs: number
   numTurns: number
   contextWindow: number
-  maxOutputTokens: number
-  contextTokens: number
-  cacheReadTokens: number
-  cacheCreationTokens: number
-  callCacheRead: number
-  callCacheWrite: number
-  lastQueryCalls: number
+  maxOutputTokens?: number
+  contextTokens?: number
+  cacheReadTokens?: number
+  cacheCreationTokens?: number
+  callCacheRead?: number
+  callCacheWrite?: number
+  lastQueryCalls?: number
   permissionMode?: string
   modelUsage?: Record<string, { inputTokens: number; outputTokens: number; cacheReadInputTokens: number; cacheCreationInputTokens: number; costUSD: number }>
   cacheWrite5mTokens?: number

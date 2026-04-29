@@ -374,6 +374,28 @@ class WorkspaceStore {
     this.save()
   }
 
+  markAgentCommandSent(id: string): void {
+    this.state = {
+      ...this.state,
+      terminals: this.state.terminals.map(t =>
+        t.id === id ? { ...t, agentCommandSent: true } : t
+      )
+    }
+    this.notify()
+    this.save()
+  }
+
+  markHasUserInput(id: string): void {
+    this.state = {
+      ...this.state,
+      terminals: this.state.terminals.map(t =>
+        t.id === id ? { ...t, hasUserInput: true } : t
+      )
+    }
+    this.notify()
+    this.save()
+  }
+
   appendScrollback(id: string, data: string): void {
     this.state = {
       ...this.state,

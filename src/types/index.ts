@@ -55,6 +55,8 @@ export interface TerminalInstance {
   scrollbackBuffer: string[];
   lastActivityTime?: number;
   hasPendingAction?: boolean;
+  hasUserInput?: boolean;         // Tracks user input before auto-running agent command
+  agentCommandSent?: boolean;     // Prevents duplicate auto-run agent commands
   sdkSessionId?: string;         // Claude SDK session ID for auto-resume
   model?: string;                // Selected Claude model for this session
   agentParams?: Record<string, AgentParamValue>; // Normalized agent-specific persisted params
@@ -249,6 +251,11 @@ export interface AppSettings {
   accountSwitching?: boolean;     // Claude account quick-switch (default: true)
   cacheExpiryWarning?: boolean;   // Warn before sending when cache (>150k) has expired (>1h)
   cacheAlarmTimer?: boolean;      // Show floating cache TTL countdown (5m / 1h) in top-right corner
+  remoteServerAutoStart?: boolean;  // Start the local remote server when the app launches
+  remoteServerPort?: number;        // Last configured remote server port
+  remoteServerBindInterface?: 'localhost' | 'tailscale' | 'all';  // Last configured remote server bind mode
+  cxSemanticNavigationEnabled?: boolean;  // Enable optional cx semantic code navigation prompt integration
+  cxBinaryPath?: string;                  // Optional explicit cx binary path
 }
 
 // ============================================

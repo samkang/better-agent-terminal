@@ -27,6 +27,7 @@ type AppPermissionMode = PermissionMode | 'bypassPlan'
 import { broadcastHub } from './remote/broadcast-hub'
 import { getDataDir } from './server-core/data-dir'
 import { getNotifier } from './server-core/notifier'
+import { applyCxEnvironment, buildCxSystemPromptAppend } from './semantic-navigation'
 
 function expectedContextWindowForModel(model?: string): number | undefined {
   if (!model) return undefined
@@ -42,7 +43,7 @@ function buildClaudeSdkEnv(autoCompactWindow?: number): NodeJS.ProcessEnv {
   } else {
     delete env.CLAUDE_CODE_AUTO_COMPACT_WINDOW
   }
-  return env
+  return applyCxEnvironment(env)
 }
 
 
@@ -816,10 +817,15 @@ export class ClaudeAgentManager {
       const sdkMode: PermissionMode = currentMode === 'bypassPlan' ? 'plan' : currentMode
       const sdkModel = sdkModelForClaudeSelection(session.model)
       const sdkEnv = buildClaudeSdkEnv(session.autoCompactWindow)
+      const cxSystemPromptAppend = buildCxSystemPromptAppend()
       const queryOptions: Record<string, unknown> = {
         abortController: session.abortController,
         cwd: session.cwd,
-        systemPrompt: { type: 'preset', preset: 'claude_code' },
+        systemPrompt: {
+          type: 'preset',
+          preset: 'claude_code',
+          ...(cxSystemPromptAppend ? { append: cxSystemPromptAppend } : {}),
+        },
         tools: { type: 'preset', preset: 'claude_code' },
         permissionMode: sdkMode,
         ...(currentMode === 'bypassPermissions' ? { allowDangerouslySkipPermissions: true } : {}),

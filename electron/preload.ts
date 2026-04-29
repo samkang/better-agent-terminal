@@ -49,7 +49,15 @@ const electronAPI = {
     save: (data: string) => ipcRenderer.invoke('settings:save', data),
     load: () => ipcRenderer.invoke('settings:load'),
     getShellPath: (shell: string) => ipcRenderer.invoke('settings:get-shell-path', shell),
-    clearTerminalHistory: () => ipcRenderer.invoke('settings:clear-terminal-history')
+    clearTerminalHistory: () => ipcRenderer.invoke('settings:clear-terminal-history'),
+    detectCx: () => ipcRenderer.invoke('settings:detect-cx') as Promise<{
+      enabled: boolean
+      detected: boolean
+      path?: string
+      version?: string
+      cacheDir: string
+      error?: string
+    }>
   },
   dialog: {
     selectFolder: () => ipcRenderer.invoke('dialog:select-folder') as Promise<string[] | null>,

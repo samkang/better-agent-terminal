@@ -8,7 +8,7 @@ import { CODEX_EFFORT_LEVELS, EFFORT_LEVELS } from '../types'
 import { normalizeAgentParams } from '../types/agent-profiles'
 import { settingsStore } from '../stores/settings-store'
 import { workspaceStore } from '../stores/workspace-store'
-import type { AgentPresetId } from '../types/agent-presets'
+import { getAgentPreset, type AgentPresetId } from '../types/agent-presets'
 import { LinkedText, FilePreviewModal } from './PathLinker'
 import { ChatMarkdown } from './ChatMarkdown'
 import { filenameForPastedImage, readFileAsDataUrl } from '../utils/file-data-url'
@@ -113,6 +113,7 @@ export function CodexAgentPanel({ sessionId, cwd, isActive, workspaceId, onClose
     }
     return null
   })
+  const markdownCwd = worktreeInfo?.worktreePath || terminal?.worktreePath || cwd
   const [promptSuggestion, setPromptSuggestion] = useState<string | null>(null)
   const [isResumingHistory, setIsResumingHistory] = useState(false)
   const [activePlanFile, setActivePlanFile] = useState<string | null>(null)
@@ -1825,10 +1826,10 @@ export function CodexAgentPanel({ sessionId, cwd, isActive, workspaceId, onClose
 
   const handlePermissionModeCycle = useCallback(async () => {
     const allowBypass = settingsStore.getSettings().allowBypassPermissions
-    const availableModes = allowBypass
+    const availableModes: readonly (typeof permissionModes[number])[] = allowBypass
       ? permissionModes
       : permissionModes.filter(m => m !== 'bypassPermissions' && m !== 'bypassPlan')
-    const idx = availableModes.indexOf(permissionMode as typeof availableModes[number])
+    const idx = availableModes.indexOf(permissionMode as typeof permissionModes[number])
     const nextMode = availableModes[(idx + 1) % availableModes.length]
     setPermissionMode(nextMode)
     await window.electronAPI.claude.setPermissionMode(sessionId, nextMode)
@@ -2523,7 +2524,7 @@ export function CodexAgentPanel({ sessionId, cwd, isActive, workspaceId, onClose
             <div className="tl-content">
               <div className="claude-tool-header" onClick={() => toggleTool(item.id)}>
                 <span className="claude-tool-name">{item.toolName === 'Agent' ? 'Agent' : 'Task'}</span>
-                {item.input.subagent_type && <span className="claude-tool-badge">{String(item.input.subagent_type)}</span>}
+                {Boolean(item.input.subagent_type) && <span className="claude-tool-badge">{String(item.input.subagent_type)}</span>}
                 {desc && <span className="claude-tool-desc">{desc}</span>}
                 {item.status === 'running' && item.timestamp > 0 && (
                   <span className="claude-task-tag claude-task-elapsed">{formatElapsed(item.timestamp)}</span>
@@ -2759,8 +2760,8 @@ export function CodexAgentPanel({ sessionId, cwd, isActive, workspaceId, onClose
             <div className="tl-content">
               <div className="claude-tool-header" onClick={() => toggleTool(item.id)}>
                 <span className="claude-tool-name">TaskOutput</span>
-                {parentTask?.input.subagent_type && (
-                  <span className="claude-tool-badge">{String(parentTask.input.subagent_type)}</span>
+                {Boolean(parentTask?.input.subagent_type) && (
+                  <span className="claude-tool-badge">{String(parentTask?.input.subagent_type)}</span>
                 )}
                 {parentTask && (
                   <span
@@ -3017,7 +3018,7 @@ export function CodexAgentPanel({ sessionId, cwd, isActive, workspaceId, onClose
             )
           })()}
           {msg.content && (
-            <ChatMarkdown text={msg.content} cwd={cwd} />
+            <ChatMarkdown text={msg.content} cwd={markdownCwd} />
           )}
           {msg.timestamp > 0 && (
             <span className="claude-msg-time" title={formatFullTimestamp(msg.timestamp)}>{formatTimestamp(msg.timestamp)}</span>
@@ -3030,7 +3031,10 @@ export function CodexAgentPanel({ sessionId, cwd, isActive, workspaceId, onClose
   return (
     <div
       className="claude-agent-panel codex-agent-panel"
-      style={{ '--claude-font-size': `${Math.max(11, claudeFontSize - 1)}px` } as React.CSSProperties}
+      style={{
+        '--claude-font-size': `${Math.max(11, claudeFontSize - 1)}px`,
+        ...(getAgentPreset(terminal?.agentPreset ?? '')?.color ? { '--agent-color': getAgentPreset(terminal?.agentPreset ?? '')!.color } : {}),
+      } as React.CSSProperties}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -3088,7 +3092,7 @@ export function CodexAgentPanel({ sessionId, cwd, isActive, workspaceId, onClose
                 {progressDesc && !isStalled && <span className="claude-active-task-progress">{progressDesc}</span>}
                 {isStalled && <span className="claude-active-task-stalled">{t('claude.stalled')}</span>}
                 <span className="claude-active-task-time">{formatElapsed(task.timestamp)}</span>
-                {task.input.run_in_background && <span className="claude-task-tag">{t('claude.bg')}</span>}
+                {Boolean(task.input.run_in_background) && <span className="claude-task-tag">{t('claude.bg')}</span>}
                 <button className="claude-task-stop-btn" onClick={(e) => {
                   e.stopPropagation()
                   window.electronAPI.claude.stopTask(sessionId, task.id)
@@ -3208,7 +3212,7 @@ export function CodexAgentPanel({ sessionId, cwd, isActive, workspaceId, onClose
               {pendingPermission.decisionReason}
             </div>
           )}
-          {pendingPermission.input.description && (
+          {Boolean(pendingPermission.input.description) && (
             <div className="claude-permission-desc">
               {String(pendingPermission.input.description)}
             </div>
@@ -3756,7 +3760,7 @@ export function CodexAgentPanel({ sessionId, cwd, isActive, workspaceId, onClose
             {contentModal.markdown ? (
               <ChatMarkdown
                 text={contentModal.content}
-                cwd={cwd}
+                cwd={markdownCwd}
                 className="claude-plan-modal-body claude-plan-modal-markdown claude-markdown"
               />
             ) : (
@@ -4262,7 +4266,7 @@ export function CodexAgentPanel({ sessionId, cwd, isActive, workspaceId, onClose
           ),
           tokens: () => {
             if (!sessionMeta) return null
-            if (isCodexSession && sessionMeta.contextTokens <= 0) return null
+            if (isCodexSession && (sessionMeta.contextTokens || 0) <= 0) return null
             return (
               <span key="tokens" className="claude-statusline-item claude-statusline-clickable" title={`context: ${(sessionMeta.contextTokens || 0).toLocaleString()} tok\ncumulative in: ${sessionMeta.inputTokens.toLocaleString()} / out: ${sessionMeta.outputTokens.toLocaleString()}\nclick to show context breakdown`}
                 onClick={() => { window.electronAPI.claude.getContextUsage(sessionId).then(u => { if (u) setContextUsagePopup(u) }).catch(() => {}) }}>
@@ -4278,7 +4282,7 @@ export function CodexAgentPanel({ sessionId, cwd, isActive, workspaceId, onClose
           ),
           contextPct: () => {
             if (!sessionMeta || sessionMeta.contextWindow <= 0) return null
-            if (isCodexSession && sessionMeta.contextTokens <= 0) return null
+            if (isCodexSession && (sessionMeta.contextTokens || 0) <= 0) return null
             const ctxTokens = sessionMeta.contextTokens || (sessionMeta.inputTokens + sessionMeta.outputTokens)
             const pct = Math.round((ctxTokens / sessionMeta.contextWindow) * 100)
             const ctxColor = pct >= 80 ? '#e05252' : pct >= 50 ? '#e6a700' : '#89ca78'

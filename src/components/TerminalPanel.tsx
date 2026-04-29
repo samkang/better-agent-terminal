@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, memo } from 'react'
-import { Terminal } from '@xterm/xterm'
+import { Terminal, type ILink } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
@@ -256,8 +256,7 @@ export const TerminalPanel = memo(function TerminalPanel({ terminalId, isActive 
       scrollback: 10000,
       convertEol: true,
       allowProposedApi: true,
-      allowTransparency: true,
-      scrollOnOutput: true
+      allowTransparency: true
     })
 
     const fitAddon = new FitAddon()
@@ -280,7 +279,7 @@ export const TerminalPanel = memo(function TerminalPanel({ terminalId, isActive 
         const text = line.translateToString()
         const fileUrlRegex = /file:\/\/\/[^\s'"\])}>,;`]+/g
         let match
-        const links = []
+        const links: ILink[] = []
         while ((match = fileUrlRegex.exec(text)) !== null) {
           const url = match[0]
           const startX = match.index + 1
@@ -291,8 +290,8 @@ export const TerminalPanel = memo(function TerminalPanel({ terminalId, isActive 
               start: { x: startX, y: bufferLineNumber },
               end: { x: endX, y: bufferLineNumber }
             },
-            activate() {
-              window.electronAPI.shell.openExternal(url)
+            activate(_event, text) {
+              window.electronAPI.shell.openExternal(text)
             }
           })
         }

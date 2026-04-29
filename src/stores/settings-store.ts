@@ -37,6 +37,9 @@ const defaultSettings: AppSettings = {
   allowBypassPermissions: true,
   defaultEffort: 'high',
   defaultCodexEffort: 'high',
+  remoteServerAutoStart: false,
+  remoteServerPort: 9876,
+  remoteServerBindInterface: 'localhost',
 }
 
 class SettingsStore {
@@ -214,6 +217,18 @@ class SettingsStore {
     this.save()
   }
 
+  setCxSemanticNavigationEnabled(enabled: boolean): void {
+    this.settings = { ...this.settings, cxSemanticNavigationEnabled: enabled || undefined }
+    this.notify()
+    this.save()
+  }
+
+  setCxBinaryPath(binaryPath: string): void {
+    this.settings = { ...this.settings, cxBinaryPath: binaryPath.trim() || undefined }
+    this.notify()
+    this.save()
+  }
+
   setDefaultModel(model: string): void {
     this.setDefaultClaudeModel(model)
   }
@@ -294,6 +309,24 @@ class SettingsStore {
 
   setNotifyOnlyBackground(enabled: boolean): void {
     this.settings = { ...this.settings, notifyOnlyBackground: enabled }
+    this.notify()
+    this.save()
+  }
+
+  setRemoteServerAutoStart(enabled: boolean): void {
+    this.settings = { ...this.settings, remoteServerAutoStart: enabled }
+    this.notify()
+    this.save()
+  }
+
+  setRemoteServerPort(port: number): void {
+    this.settings = { ...this.settings, remoteServerPort: port }
+    this.notify()
+    this.save()
+  }
+
+  setRemoteServerBindInterface(bindInterface: 'localhost' | 'tailscale' | 'all'): void {
+    this.settings = { ...this.settings, remoteServerBindInterface: bindInterface }
     this.notify()
     this.save()
   }
@@ -403,7 +436,7 @@ function parseToken(token: string): { id: string; color?: string } {
 // Template string → config
 // Format: "sessionId(#e06c75),tokens > cost | prompts"
 export function parseStatuslineTemplate(template: string): StatuslineItemConfig[] {
-  const allIds = new Set(STATUSLINE_ITEMS.map(d => d.id))
+  const allIds = new Set<string>(STATUSLINE_ITEMS.map(d => d.id))
   const alignZones = template.split('|').map(s => s.trim())
   const aligns: Array<'left' | 'center' | 'right'> =
     alignZones.length >= 3 ? ['left', 'center', 'right'] :

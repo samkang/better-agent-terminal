@@ -22,6 +22,7 @@ import { ClaudeAgentManager } from '../claude-agent-manager'
 import { CodexAgentManager } from '../codex-agent-manager'
 import { OpenAIAgentManager } from '../openai-agent-manager'
 import { hasOpenAIKey, setOpenAIKey, clearOpenAIKey } from '../openai-agent/api-key'
+import { detectCx } from '../semantic-navigation'
 import type { WindowRegistry } from '../window-registry'
 import type { ProfileManager } from '../profile-manager'
 import type { EffortLevel, CreatePtyOptions } from '../../src/types'
@@ -45,6 +46,19 @@ function linuxClaudeArchCandidates(): string[] {
   } catch { /* ignore */ }
   if (isGlibc === false) return [`linux-${arch}-musl`, `linux-${arch}`]
   return [`linux-${arch}`, `linux-${arch}-musl`]
+}
+
+function getPosixAutoShell(): string {
+  if (process.env.SHELL && fsSync.existsSync(process.env.SHELL)) {
+    return process.env.SHELL
+  }
+  if (process.platform === 'darwin') {
+    return '/bin/zsh'
+  }
+  if (fsSync.existsSync('/bin/bash')) {
+    return '/bin/bash'
+  }
+  return '/bin/sh'
 }
 
 export interface ProxiedHandlersDeps {
@@ -130,6 +144,7 @@ export function registerProxiedHandlers(deps: ProxiedHandlersDeps): void {
     const configPath = path.join(getDataDir(), 'settings.json')
     try { return await fs.readFile(configPath, 'utf-8') } catch { return null }
   })
+  registerHandler('settings:detect-cx', () => detectCx())
   registerHandler('settings:clear-terminal-history', async () => {
     const historyDir = path.join(getDataDir(), 'terminal-history')
     try {
@@ -150,7 +165,7 @@ export function registerProxiedHandlers(deps: ProxiedHandlersDeps): void {
 
     let result: string
     if (process.platform === 'darwin' || process.platform === 'linux') {
-      if (shellType === 'auto') result = process.env.SHELL || '/bin/zsh'
+      if (shellType === 'auto') result = getPosixAutoShell()
       else if (shellType === 'zsh') result = '/bin/zsh'
       else if (shellType === 'bash') {
         if (fsSync.existsSync('/opt/homebrew/bin/bash')) result = '/opt/homebrew/bin/bash'
@@ -158,7 +173,7 @@ export function registerProxiedHandlers(deps: ProxiedHandlersDeps): void {
         else result = '/bin/bash'
       }
       else if (shellType === 'sh') result = '/bin/sh'
-      else if (shellType === 'pwsh' || shellType === 'powershell' || shellType === 'cmd') result = process.env.SHELL || '/bin/zsh'
+      else if (shellType === 'pwsh' || shellType === 'powershell' || shellType === 'cmd') result = getPosixAutoShell()
       else result = shellType
     } else {
       if (shellType === 'auto' || shellType === 'pwsh') {

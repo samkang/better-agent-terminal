@@ -10,6 +10,7 @@ import { TOOL_CONTEXT_KEY, type OpenAIAskUserQuestion, type OpenAIPermissionMode
 import { hasCodexOAuthCredential, loadOpenAIAuthCredential } from './openai-agent/api-key'
 import { DEFAULT_OPENAI_MODEL, findModel, OPENAI_MODELS, CODEX_CHATGPT_SUPPORTED_MODELS } from './openai-agent/models'
 import { scanSkills, buildSkillsSystemPromptSection, type SkillMeta } from './openai-agent/skills-scanner'
+import { buildCxSystemPromptAppend } from './semantic-navigation'
 import {
   needsCompaction as compactionNeeded,
   splitForCompaction,
@@ -443,7 +444,10 @@ export class OpenAIAgentManager {
     try {
       const found = await scanSkills(options.cwd)
       for (const s of found) session.skills.set(s.name, s)
-      if (found.length) session.systemPrompt = DEFAULT_SYSTEM_PROMPT + buildSkillsSystemPromptSection(found)
+      const cxSystemPromptAppend = buildCxSystemPromptAppend()
+      session.systemPrompt = DEFAULT_SYSTEM_PROMPT
+        + (found.length ? buildSkillsSystemPromptSection(found) : '')
+        + (cxSystemPromptAppend ? `\n\n${cxSystemPromptAppend}` : '')
       logger.log(`${stag} Loaded ${found.length} skills`)
     } catch (err) {
       logger.warn(`${stag} Skills scan failed: ${err instanceof Error ? err.message : String(err)}`)

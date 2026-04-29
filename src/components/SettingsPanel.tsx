@@ -44,6 +44,15 @@ interface RemoteClientStatus {
   info: { host: string; port: number } | null
 }
 
+interface CxDetectionStatus {
+  enabled: boolean
+  detected: boolean
+  path?: string
+  version?: string
+  cacheDir: string
+  error?: string
+}
+
 type SettingsTab = 'general' | 'agent' | 'remote' | 'advanced'
 const CUSTOM_MODEL_OPTION = '__custom_model__'
 
@@ -55,15 +64,17 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
 
   // Remote server state
   const [serverStatus, setServerStatus] = useState<RemoteServerStatus>({ running: false, port: null, fingerprint: null, bindInterface: null, boundHost: null, clients: [] })
-  const [serverPort, setServerPort] = useState('9876')
+  const [serverPort, setServerPort] = useState(String(settings.remoteServerPort || 9876))
   const [serverToken, setServerToken] = useState<string | null>(null)
-  const [bindInterface, setBindInterface] = useState<BindInterface>('localhost')
+  const [bindInterface, setBindInterface] = useState<BindInterface>(settings.remoteServerBindInterface || 'localhost')
   const [clientStatus, setClientStatus] = useState<RemoteClientStatus>({ connected: false, info: null })
 
   // OpenAI API key state
   const [openaiKeyStatus, setOpenaiKeyStatus] = useState<{ hasKey: boolean }>({ hasKey: false })
   const [openaiKeyInput, setOpenaiKeyInput] = useState('')
   const [openaiKeySaving, setOpenaiKeySaving] = useState(false)
+  const [cxStatus, setCxStatus] = useState<CxDetectionStatus | null>(null)
+  const [cxDetecting, setCxDetecting] = useState(false)
 
   // QR code state
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
@@ -112,9 +123,30 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   }, [])
 
   useEffect(() => {
+    if (serverStatus.running) return
+    setServerPort(String(settings.remoteServerPort || 9876))
+    setBindInterface(settings.remoteServerBindInterface || 'localhost')
+  }, [settings.remoteServerPort, settings.remoteServerBindInterface, serverStatus.running])
+
+  useEffect(() => {
     if (!isDebugMode) return
     window.electronAPI.openai?.getApiKeyStatus().then(setOpenaiKeyStatus).catch(() => { /* ignore */ })
   }, [isDebugMode])
+
+  const refreshCxStatus = useCallback(async () => {
+    setCxDetecting(true)
+    try {
+      const status = await window.electronAPI.settings.detectCx()
+      setCxStatus(status)
+    } finally {
+      setCxDetecting(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (activeTab !== 'agent') return
+    refreshCxStatus().catch(() => { /* ignore */ })
+  }, [activeTab, settings.cxBinaryPath, settings.cxSemanticNavigationEnabled, refreshCxStatus])
 
   // Check font availability on mount
   useEffect(() => {
@@ -287,8 +319,11 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   })()
 
   const handleStartServer = async () => {
+    const port = parseInt(serverPort) || 9876
+    settingsStore.setRemoteServerPort(port)
+    settingsStore.setRemoteServerBindInterface(bindInterface)
     const result = await window.electronAPI.remote.startServer({
-      port: parseInt(serverPort) || 9876,
+      port,
       bindInterface,
     })
     if ('error' in result) {
@@ -815,6 +850,45 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                     {t('settings.clearTerminalHistory')}
                   </button>
                 </div>
+                <div className="settings-group checkbox-group">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={settings.cxSemanticNavigationEnabled === true}
+                      onChange={e => {
+                        settingsStore.setCxSemanticNavigationEnabled(e.target.checked)
+                        window.setTimeout(() => refreshCxStatus().catch(() => { /* ignore */ }), 150)
+                      }}
+                    />
+                    {t('settings.cxSemanticNavigation')}
+                  </label>
+                  <p className="settings-hint">{t('settings.cxSemanticNavigationHint')}</p>
+                  <input
+                    type="text"
+                    value={settings.cxBinaryPath || ''}
+                    onChange={e => settingsStore.setCxBinaryPath(e.target.value)}
+                    onBlur={() => refreshCxStatus().catch(() => { /* ignore */ })}
+                    placeholder={t('settings.cxBinaryPathPlaceholder')}
+                    style={{ marginTop: 6 }}
+                  />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 12, color: cxStatus?.detected ? '#3fb950' : '#f85149' }}>
+                      {cxDetecting
+                        ? t('settings.cxDetecting')
+                        : cxStatus?.detected
+                          ? t('settings.cxDetected', { version: cxStatus.version || 'cx', path: cxStatus.path || 'cx' })
+                          : t('settings.cxNotDetected', { error: cxStatus?.error || 'cx not found' })}
+                    </span>
+                    <button className="settings-btn" onClick={() => refreshCxStatus().catch(() => { /* ignore */ })}>
+                      {t('settings.cxDetect')}
+                    </button>
+                  </div>
+                  {cxStatus?.detected && (
+                    <p className="settings-hint">
+                      {t('settings.cxCacheDir', { path: cxStatus.cacheDir })}
+                    </p>
+                  )}
+                </div>
               </div>
             </>
           )}
@@ -831,6 +905,18 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                   {t('settings.remoteAccessReadme')}
                 </a>。
               </p>
+
+              <div className="settings-group checkbox-group">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={settings.remoteServerAutoStart === true}
+                    onChange={e => settingsStore.setRemoteServerAutoStart(e.target.checked)}
+                  />
+                  {t('settings.remoteServerAutoStart')}
+                </label>
+                <p className="settings-hint">{t('settings.remoteServerAutoStartHint')}</p>
+              </div>
 
               {serverStatus.running ? (
                 <>
@@ -890,8 +976,27 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               ) : (
                 <div className="settings-group">
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <input type="number" value={serverPort} onChange={e => setServerPort(e.target.value)} placeholder={t('settings.port')} style={{ width: 80 }} />
-                    <select value={bindInterface} onChange={e => setBindInterface(e.target.value as BindInterface)} style={{ fontSize: 12 }} title={t('settings.bindInterfaceHint', 'Network interface to listen on')}>
+                    <input
+                      type="number"
+                      value={serverPort}
+                      onChange={e => {
+                        setServerPort(e.target.value)
+                        const port = parseInt(e.target.value)
+                        if (Number.isFinite(port) && port > 0) settingsStore.setRemoteServerPort(port)
+                      }}
+                      placeholder={t('settings.port')}
+                      style={{ width: 80 }}
+                    />
+                    <select
+                      value={bindInterface}
+                      onChange={e => {
+                        const value = e.target.value as BindInterface
+                        setBindInterface(value)
+                        settingsStore.setRemoteServerBindInterface(value)
+                      }}
+                      style={{ fontSize: 12 }}
+                      title={t('settings.bindInterfaceHint', 'Network interface to listen on')}
+                    >
                       <option value="localhost">{t('settings.bindLocalhost', 'localhost (this machine only)')}</option>
                       <option value="tailscale">{t('settings.bindTailscale', 'Tailscale (tailnet only)')}</option>
                       <option value="all">{t('settings.bindAll', 'All interfaces (LAN / public)')}</option>

@@ -445,7 +445,6 @@ export const WorkerPanel = memo(function WorkerPanel({ terminalId, procfilePath,
       convertEol: true,
       allowProposedApi: true,
       allowTransparency: true,
-      scrollOnOutput: true,
       disableStdin: true,
     })
 

@@ -83,7 +83,7 @@ export function FolderPicker({ initialPath, multiSelect = true, mode = 'folders'
   // Resolve initial path: explicit prop, else home. Also load quick links.
   useEffect(() => {
     const init = async () => {
-      let start = initialPath
+      let start = initialPath || ''
       if (!start) {
         try { start = await window.electronAPI.fs.home() }
         catch { start = '/' }
