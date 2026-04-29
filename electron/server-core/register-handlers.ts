@@ -22,6 +22,7 @@ import { ClaudeAgentManager } from '../claude-agent-manager'
 import { CodexAgentManager } from '../codex-agent-manager'
 import { OpenAIAgentManager } from '../openai-agent-manager'
 import { hasOpenAIKey, setOpenAIKey, clearOpenAIKey } from '../openai-agent/api-key'
+import { detectCx } from '../semantic-navigation'
 import type { WindowRegistry } from '../window-registry'
 import type { ProfileManager } from '../profile-manager'
 import type { EffortLevel, CreatePtyOptions } from '../../src/types'
@@ -130,6 +131,7 @@ export function registerProxiedHandlers(deps: ProxiedHandlersDeps): void {
     const configPath = path.join(getDataDir(), 'settings.json')
     try { return await fs.readFile(configPath, 'utf-8') } catch { return null }
   })
+  registerHandler('settings:detect-cx', () => detectCx())
   registerHandler('settings:clear-terminal-history', async () => {
     const historyDir = path.join(getDataDir(), 'terminal-history')
     try {

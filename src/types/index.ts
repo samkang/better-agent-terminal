@@ -252,6 +252,8 @@ export interface AppSettings {
   remoteServerAutoStart?: boolean;  // Start the local remote server when the app launches
   remoteServerPort?: number;        // Last configured remote server port
   remoteServerBindInterface?: 'localhost' | 'tailscale' | 'all';  // Last configured remote server bind mode
+  cxSemanticNavigationEnabled?: boolean;  // Enable optional cx semantic code navigation prompt integration
+  cxBinaryPath?: string;                  // Optional explicit cx binary path
 }
 
 // ============================================

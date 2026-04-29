@@ -3,6 +3,7 @@ import { spawn, spawnSync } from 'child_process'
 import { z } from 'zod'
 import { tool } from 'ai'
 import { getToolContext } from './context'
+import { applyCxEnvironment } from '../semantic-navigation'
 
 const MAX_OUTPUT_CHARS = 30_000
 const DEFAULT_TIMEOUT_MS = 120_000
@@ -139,7 +140,7 @@ export const bashTool = tool({
       const start = Date.now()
       const child = spawn(shellConfig.shellPath, shellConfig.args, {
         cwd: ctx.cwd,
-        env: process.env,
+        env: applyCxEnvironment({ ...process.env }),
         windowsHide: true,
         windowsVerbatimArguments: shellConfig.windowsVerbatimArguments,
         detached: shellConfig.detached,

@@ -217,6 +217,18 @@ class SettingsStore {
     this.save()
   }
 
+  setCxSemanticNavigationEnabled(enabled: boolean): void {
+    this.settings = { ...this.settings, cxSemanticNavigationEnabled: enabled || undefined }
+    this.notify()
+    this.save()
+  }
+
+  setCxBinaryPath(binaryPath: string): void {
+    this.settings = { ...this.settings, cxBinaryPath: binaryPath.trim() || undefined }
+    this.notify()
+    this.save()
+  }
+
   setDefaultModel(model: string): void {
     this.setDefaultClaudeModel(model)
   }

@@ -44,6 +44,15 @@ interface RemoteClientStatus {
   info: { host: string; port: number } | null
 }
 
+interface CxDetectionStatus {
+  enabled: boolean
+  detected: boolean
+  path?: string
+  version?: string
+  cacheDir: string
+  error?: string
+}
+
 type SettingsTab = 'general' | 'agent' | 'remote' | 'advanced'
 const CUSTOM_MODEL_OPTION = '__custom_model__'
 
@@ -64,6 +73,8 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [openaiKeyStatus, setOpenaiKeyStatus] = useState<{ hasKey: boolean }>({ hasKey: false })
   const [openaiKeyInput, setOpenaiKeyInput] = useState('')
   const [openaiKeySaving, setOpenaiKeySaving] = useState(false)
+  const [cxStatus, setCxStatus] = useState<CxDetectionStatus | null>(null)
+  const [cxDetecting, setCxDetecting] = useState(false)
 
   // QR code state
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
@@ -121,6 +132,21 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     if (!isDebugMode) return
     window.electronAPI.openai?.getApiKeyStatus().then(setOpenaiKeyStatus).catch(() => { /* ignore */ })
   }, [isDebugMode])
+
+  const refreshCxStatus = useCallback(async () => {
+    setCxDetecting(true)
+    try {
+      const status = await window.electronAPI.settings.detectCx()
+      setCxStatus(status)
+    } finally {
+      setCxDetecting(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (activeTab !== 'agent') return
+    refreshCxStatus().catch(() => { /* ignore */ })
+  }, [activeTab, settings.cxBinaryPath, settings.cxSemanticNavigationEnabled, refreshCxStatus])
 
   // Check font availability on mount
   useEffect(() => {
@@ -823,6 +849,45 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                   >
                     {t('settings.clearTerminalHistory')}
                   </button>
+                </div>
+                <div className="settings-group checkbox-group">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={settings.cxSemanticNavigationEnabled === true}
+                      onChange={e => {
+                        settingsStore.setCxSemanticNavigationEnabled(e.target.checked)
+                        window.setTimeout(() => refreshCxStatus().catch(() => { /* ignore */ }), 150)
+                      }}
+                    />
+                    {t('settings.cxSemanticNavigation')}
+                  </label>
+                  <p className="settings-hint">{t('settings.cxSemanticNavigationHint')}</p>
+                  <input
+                    type="text"
+                    value={settings.cxBinaryPath || ''}
+                    onChange={e => settingsStore.setCxBinaryPath(e.target.value)}
+                    onBlur={() => refreshCxStatus().catch(() => { /* ignore */ })}
+                    placeholder={t('settings.cxBinaryPathPlaceholder')}
+                    style={{ marginTop: 6 }}
+                  />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 12, color: cxStatus?.detected ? '#3fb950' : '#f85149' }}>
+                      {cxDetecting
+                        ? t('settings.cxDetecting')
+                        : cxStatus?.detected
+                          ? t('settings.cxDetected', { version: cxStatus.version || 'cx', path: cxStatus.path || 'cx' })
+                          : t('settings.cxNotDetected', { error: cxStatus?.error || 'cx not found' })}
+                    </span>
+                    <button className="settings-btn" onClick={() => refreshCxStatus().catch(() => { /* ignore */ })}>
+                      {t('settings.cxDetect')}
+                    </button>
+                  </div>
+                  {cxStatus?.detected && (
+                    <p className="settings-hint">
+                      {t('settings.cxCacheDir', { path: cxStatus.cacheDir })}
+                    </p>
+                  )}
                 </div>
               </div>
             </>
