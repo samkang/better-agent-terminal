@@ -9,6 +9,7 @@ import * as fs from 'fs'
 import * as fsPromises from 'fs/promises'
 import * as path from 'path'
 import { logger } from './logger'
+import { dependencyManager } from './dependency-manager'
 
 const execFileAsync = promisify(execFile)
 
@@ -112,6 +113,7 @@ export class WorktreeManager {
     this.activeWorktrees.set(sessionId, info)
 
     logger.log(`[Worktree] Created worktree for session ${shortId}: ${worktreePath} (branch: ${finalBranch}, source: ${sourceBranch})`)
+    dependencyManager.queueWorktreeInstall(info)
     return info
   }
 

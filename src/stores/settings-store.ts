@@ -229,6 +229,12 @@ class SettingsStore {
     this.save()
   }
 
+  setWorktreePnpmInstallEnabled(enabled: boolean): void {
+    this.settings = { ...this.settings, worktreePnpmInstallEnabled: enabled || undefined }
+    this.notify()
+    this.save()
+  }
+
   setDefaultModel(model: string): void {
     this.setDefaultClaudeModel(model)
   }
