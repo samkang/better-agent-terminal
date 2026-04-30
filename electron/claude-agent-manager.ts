@@ -2001,7 +2001,17 @@ export class ClaudeAgentManager {
     const builtins = CLAUDE_BUILTIN_MODELS.map(m => ({ ...m, source: 'builtin' as const }))
     try {
       const query = await getQuery()
-      const instance = query({ prompt: '', cwd: '/' })
+      const claudeCodePath = resolveClaudeCodePath()
+      const nodeExecutable = getNodeExecutable()
+      const electronFallback = isElectronFallback()
+      const instance = query({
+        prompt: '',
+        options: {
+          cwd: '/',
+          ...(claudeCodePath ? { pathToClaudeCodeExecutable: claudeCodePath } : {}),
+          ...(nodeExecutable !== 'node' || electronFallback ? { executable: nodeExecutable } : {}),
+        },
+      })
       const sdkModels = await instance.supportedModels()
       // Exclude from SDK list any model already covered by builtins (including [1m] variants)
       const sdkFiltered = sdkModels

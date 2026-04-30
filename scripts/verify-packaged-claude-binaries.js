@@ -63,6 +63,29 @@ function findFile(root, predicate, maxDepth = 20) {
   return walk(root, 0)
 }
 
+function findFiles(root, predicate, maxDepth = 20) {
+  const results = []
+  function walk(current, depth) {
+    if (depth > maxDepth) return
+    let entries
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      const fullPath = path.join(current, entry.name)
+      if (entry.isFile() && predicate(fullPath)) {
+        results.push(fullPath)
+      } else if (entry.isDirectory()) {
+        walk(fullPath, depth + 1)
+      }
+    }
+  }
+  walk(root, 0)
+  return results
+}
+
 function assertExecutable(filePath) {
   if (process.platform === 'win32') return
   const mode = fs.statSync(filePath).mode
@@ -79,8 +102,10 @@ function main() {
   const targetArch = normalizeArch(process.env.BAT_TARGET_ARCH)
   const platform = process.platform
   const claudeCodePackage = `claude-code-${platform}-${targetArch}`
-  const nativePackage = `claude-agent-sdk-${platform}-${targetArch}`
+  const codexPackage = `codex-${platform}-${targetArch}`
+  const codexNativePrefix = `codex-${platform}-`
   const nativeBinary = platform === 'win32' ? 'claude.exe' : 'claude'
+  const codexBinary = platform === 'win32' ? 'codex.exe' : 'codex'
 
   const unpackedDirs = findDirs(releaseDir, 'app.asar.unpacked')
   if (unpackedDirs.length === 0) {
@@ -94,15 +119,57 @@ function main() {
       return normalized.endsWith(`/node_modules/@anthropic-ai/${claudeCodePackage}/${nativeBinary}`)
     })
 
-    const agentSdkNative = findFile(unpackedDir, filePath => {
+    const agentSdkNativeFiles = findFiles(unpackedDir, filePath => {
       const normalized = toPosix(filePath)
-      return normalized.endsWith(`/node_modules/@anthropic-ai/${nativePackage}/${nativeBinary}`)
+      return normalized.includes('/node_modules/@anthropic-ai/claude-agent-sdk-') &&
+        normalized.endsWith(`/${nativeBinary}`)
     })
 
-    if (claudeCode && agentSdkNative) {
+    const nonTargetClaudeCodeFiles = findFiles(unpackedDir, filePath => {
+      const normalized = toPosix(filePath)
+      return normalized.includes('/node_modules/@anthropic-ai/claude-code-') &&
+        !normalized.includes(`/node_modules/@anthropic-ai/${claudeCodePackage}/`) &&
+        normalized.endsWith(`/${nativeBinary}`)
+    })
+
+    const codex = findFile(unpackedDir, filePath => {
+      const normalized = toPosix(filePath)
+      return normalized.includes(`/node_modules/@openai/${codexPackage}/`) &&
+        normalized.endsWith(`/${codexBinary}`)
+    })
+
+    const nonTargetCodexFiles = findFiles(unpackedDir, filePath => {
+      const normalized = toPosix(filePath)
+      return normalized.includes(`/node_modules/@openai/${codexNativePrefix}`) &&
+        !normalized.includes(`/node_modules/@openai/${codexPackage}/`) &&
+        normalized.endsWith(`/${codexBinary}`)
+    })
+
+    if (agentSdkNativeFiles.length > 0) {
+      throw new Error(
+        `Packaged Agent SDK native binaries should not be bundled; pass pathToClaudeCodeExecutable instead.\n` +
+        agentSdkNativeFiles.map(filePath => `  - ${filePath}`).join('\n')
+      )
+    }
+
+    if (nonTargetClaudeCodeFiles.length > 0) {
+      throw new Error(
+        `Packaged Claude Code contains non-target native binaries for ${platform}-${targetArch}.\n` +
+        nonTargetClaudeCodeFiles.map(filePath => `  - ${filePath}`).join('\n')
+      )
+    }
+
+    if (nonTargetCodexFiles.length > 0) {
+      throw new Error(
+        `Packaged Codex contains non-target native binaries for ${platform}-${targetArch}.\n` +
+        nonTargetCodexFiles.map(filePath => `  - ${filePath}`).join('\n')
+      )
+    }
+
+    if (claudeCode && codex) {
       assertExecutable(claudeCode)
-      assertExecutable(agentSdkNative)
-      results.push({ unpackedDir, claudeCode, agentSdkNative })
+      assertExecutable(codex)
+      results.push({ unpackedDir, claudeCode, codex })
     }
   }
 
@@ -111,14 +178,15 @@ function main() {
     throw new Error(
       `Missing packaged Claude binaries for ${platform}-${targetArch}.\n` +
       `Expected Claude Code CLI: node_modules/@anthropic-ai/${claudeCodePackage}/${nativeBinary}\n` +
-      `Expected Agent SDK native binary: node_modules/@anthropic-ai/${nativePackage}/${nativeBinary}\n` +
+      `Expected Codex CLI: node_modules/@openai/${codexPackage}/**/${codexBinary}\n` +
       `Searched app.asar.unpacked directories:\n${searched}`
     )
   }
 
   for (const result of results) {
     console.log(`Verified Claude Code CLI: ${result.claudeCode}`)
-    console.log(`Verified Agent SDK native binary: ${result.agentSdkNative}`)
+    console.log(`Verified Codex CLI: ${result.codex}`)
+    console.log('Verified Agent SDK native binaries are not bundled')
   }
 }
 

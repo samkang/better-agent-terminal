@@ -46,12 +46,57 @@ function copyPackageForTarget(packageName, platformPackage, binaryName, targetRo
   console.log(`[afterPack] copied ${platformPackage}/${binaryName} -> ${targetBinary}`)
 }
 
+function pruneAnthropicNativePackages(targetRoot, platform, arch) {
+  let entries
+  try {
+    entries = fs.readdirSync(targetRoot, { withFileTypes: true })
+  } catch {
+    return
+  }
+
+  const targetClaudeCode = `claude-code-${platform}-${arch}`
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue
+    const shouldRemove =
+      entry.name.startsWith('claude-agent-sdk-') ||
+      (entry.name.startsWith('claude-code-') && entry.name !== targetClaudeCode)
+    if (!shouldRemove) continue
+    const fullPath = path.join(targetRoot, entry.name)
+    fs.rmSync(fullPath, { recursive: true, force: true })
+    console.log(`[afterPack] removed unused native package ${entry.name}`)
+  }
+}
+
+function pruneOpenAINativePackages(resourcesRoot, platform, arch) {
+  const targetRoot = path.join(resourcesRoot, 'app.asar.unpacked', 'node_modules', '@openai')
+  let entries
+  try {
+    entries = fs.readdirSync(targetRoot, { withFileTypes: true })
+  } catch {
+    return
+  }
+
+  const targetCodex = `codex-${platform}-${arch}`
+  const nativePrefix = `codex-${platform}-`
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue
+    const shouldRemove = entry.name.startsWith(nativePrefix) && entry.name !== targetCodex
+    if (!shouldRemove) continue
+    const fullPath = path.join(targetRoot, entry.name)
+    fs.rmSync(fullPath, { recursive: true, force: true })
+    console.log(`[afterPack] removed unused native package @openai/${entry.name}`)
+  }
+}
+
 exports.default = async function afterPack(context) {
   const arch = normalizeArch(context.arch)
   const platform = context.electronPlatformName
   const binaryName = platform === 'win32' ? 'claude.exe' : 'claude'
-  const targetRoot = path.join(resourcesDir(context), 'app.asar.unpacked', 'node_modules', '@anthropic-ai')
+  const resourcesRoot = resourcesDir(context)
+  const targetRoot = path.join(resourcesRoot, 'app.asar.unpacked', 'node_modules', '@anthropic-ai')
   fs.mkdirSync(targetRoot, { recursive: true })
+  pruneAnthropicNativePackages(targetRoot, platform, arch)
+  pruneOpenAINativePackages(resourcesRoot, platform, arch)
 
   copyPackageForTarget(
     '@anthropic-ai/claude-code',
@@ -59,10 +104,6 @@ exports.default = async function afterPack(context) {
     binaryName,
     targetRoot
   )
-  copyPackageForTarget(
-    '@anthropic-ai/claude-agent-sdk',
-    `@anthropic-ai/claude-agent-sdk-${platform}-${arch}`,
-    binaryName,
-    targetRoot
-  )
+  pruneAnthropicNativePackages(targetRoot, platform, arch)
+  pruneOpenAINativePackages(resourcesRoot, platform, arch)
 }

@@ -19,12 +19,14 @@
     "build:dir": "vite build && electron-builder --dir",
     "build:release": "node scripts/build-version.js",
     "verify:packaged-claude-binaries": "node scripts/verify-packaged-claude-binaries.js",
+    "verify:release-asset-sizes": "node scripts/verify-release-asset-sizes.js",
     "postinstall": "node -e \"if(process.platform==='darwin'){const p=require('path').join('node_modules/electron/dist/Electron.app/Contents/Info.plist');try{require('child_process').execSync('plutil -replace CFBundleName -string BetterAgentTerminal '+p+' && plutil -replace CFBundleDisplayName -string BetterAgentTerminal '+p)}catch(e){}}\" && echo 'postinstall done'",
     "test:console": "node tests/console-test.js",
     "diagnose:ctrl-o": "electron tests/diagnose-ctrl-o.js",
     "diagnose:ctrl-o:quick": "electron tests/diagnose-ctrl-o.js --quick",
     "diagnose:ctrl-o:verbose": "electron tests/diagnose-ctrl-o.js --verbose",
-    "test:node-resolver": "tsx tests/node-resolver.test.ts"
+    "test:node-resolver": "tsx tests/node-resolver.test.ts",
+    "test:codex-resume": "tsx tests/codex-resume-fallback.test.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.53",
@@ -186,6 +188,9 @@
       "!node_modules/better-sqlite3/deps/**",
       "!node_modules/better-sqlite3/src/**",
       "!node_modules/better-sqlite3/build/Release/obj/**",
+      "!node_modules/@anthropic-ai/claude-agent-sdk-*/**",
+      "!node_modules/@anthropic-ai/claude-agent-sdk/node_modules/@anthropic-ai/claude-agent-sdk-*/**",
+      "!node_modules/.pnpm/@anthropic-ai+claude-agent-sdk-*/**",
       "!node_modules/@anthropic-ai/*-musl/**",
       "assets/icon.ico",
       "assets/icon.png",
@@ -195,11 +200,11 @@
       "bin/**",
       "node_modules/@anthropic-ai/claude-code/bin/**",
       "node_modules/@anthropic-ai/claude-code-*/**",
-      "node_modules/@anthropic-ai/claude-agent-sdk/node_modules/@anthropic-ai/claude-agent-sdk-*/**",
-      "node_modules/@anthropic-ai/claude-agent-sdk-*/**",
       "node_modules/@anthropic-ai/*/vendor/**/*",
       "node_modules/@anthropic-ai/**/*.wasm",
-      "node_modules/@openai/codex-*/**",
+      "node_modules/@openai/codex-darwin-*/**",
+      "node_modules/@openai/codex-linux-*/**",
+      "node_modules/@openai/codex-win32-*/**",
       "node_modules/@img/**/*"
     ]
   }
