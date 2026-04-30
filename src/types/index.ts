@@ -256,6 +256,7 @@ export interface AppSettings {
   remoteServerBindInterface?: 'localhost' | 'tailscale' | 'all';  // Last configured remote server bind mode
   cxSemanticNavigationEnabled?: boolean;  // Enable optional cx semantic code navigation prompt integration
   cxBinaryPath?: string;                  // Optional explicit cx binary path
+  worktreePnpmInstallEnabled?: boolean;   // Auto-install pnpm dependencies for new worktrees using a shared pnpm store
 }
 
 // ============================================

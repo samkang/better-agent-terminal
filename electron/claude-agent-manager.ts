@@ -129,9 +129,25 @@ function resolveClaudeCodePath(): string {
   const archKey = process.platform === 'linux'
     ? linuxArchCandidates()
     : [`${process.platform}-${process.arch}`]
+
+  const resourcesPath = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath
+  if (resourcesPath) {
+    for (const key of archKey) {
+      const packagedPath = pathModule.join(
+        resourcesPath,
+        'app.asar.unpacked',
+        'node_modules',
+        '@anthropic-ai',
+        `claude-code-${key}`,
+        platformPkgBin
+      )
+      if (fsSync.existsSync(packagedPath)) return packagedPath
+    }
+  }
+
   const candidates = [
-    `@anthropic-ai/claude-code/bin/claude.exe`,
     ...archKey.map(k => `@anthropic-ai/claude-code-${k}/${platformPkgBin}`),
+    `@anthropic-ai/claude-code/bin/claude.exe`,
   ]
   const req = (() => {
     try { return createRequire(import.meta.url ?? __filename) }
@@ -1985,7 +2001,17 @@ export class ClaudeAgentManager {
     const builtins = CLAUDE_BUILTIN_MODELS.map(m => ({ ...m, source: 'builtin' as const }))
     try {
       const query = await getQuery()
-      const instance = query({ prompt: '', cwd: '/' })
+      const claudeCodePath = resolveClaudeCodePath()
+      const nodeExecutable = getNodeExecutable()
+      const electronFallback = isElectronFallback()
+      const instance = query({
+        prompt: '',
+        options: {
+          cwd: '/',
+          ...(claudeCodePath ? { pathToClaudeCodeExecutable: claudeCodePath } : {}),
+          ...(nodeExecutable !== 'node' || electronFallback ? { executable: nodeExecutable } : {}),
+        },
+      })
       const sdkModels = await instance.supportedModels()
       // Exclude from SDK list any model already covered by builtins (including [1m] variants)
       const sdkFiltered = sdkModels

@@ -798,6 +798,17 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                   <label>
                     <input
                       type="checkbox"
+                      checked={settings.worktreePnpmInstallEnabled === true}
+                      onChange={e => settingsStore.setWorktreePnpmInstallEnabled(e.target.checked)}
+                    />
+                    {t('settings.worktreePnpmInstall')}
+                  </label>
+                  <p className="settings-hint">{t('settings.worktreePnpmInstallHint')}</p>
+                </div>
+                <div className="settings-group checkbox-group">
+                  <label>
+                    <input
+                      type="checkbox"
                       checked={!!settings.autoCompactWindow}
                       onChange={e => settingsStore.setAutoCompactWindow(e.target.checked ? 400000 : undefined)}
                     />

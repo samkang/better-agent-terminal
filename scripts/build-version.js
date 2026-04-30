@@ -63,7 +63,7 @@ function updatePackageVersion(version) {
 // Run build
 function runBuild() {
   // In CI, only compile (electron-builder runs separately)
-  const command = process.env.CI ? 'npm run compile' : 'npm run build';
+  const command = process.env.CI ? 'pnpm run compile' : 'pnpm run build';
   console.log(`Running ${command}...\n`);
   execSync(command, {
     stdio: 'inherit',

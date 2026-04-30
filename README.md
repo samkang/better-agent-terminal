@@ -249,17 +249,18 @@ Download from [Releases](https://github.com/tony1223/better-agent-terminal/relea
 ```bash
 git clone https://github.com/tony1223/better-agent-terminal.git
 cd better-agent-terminal
-npm install
+corepack enable
+pnpm install
 ```
 
 **Development mode:**
 ```bash
-npm run dev
+pnpm run dev
 ```
 
 **Build for production:**
 ```bash
-npm run build
+pnpm run build
 ```
 
 ### Option 5: Quick Install (Script)
@@ -283,9 +284,10 @@ xcode-select --install
 Then:
 
 ```bash
-npm install
-npm run dev      # Development
-npm run build    # Build .dmg
+corepack enable
+pnpm install
+pnpm run dev      # Development
+pnpm run build    # Build .dmg
 ```
 
 ---
@@ -504,9 +506,10 @@ Clone the repo and run the bundled npm script — handy for development or when 
 ```bash
 git clone https://github.com/tony1223/better-agent-terminal.git
 cd better-agent-terminal
-npm install
-npm run compile
-npm run start:server -- --bind=all --port=9876
+corepack enable
+pnpm install
+pnpm run compile
+pnpm run start:server -- --bind=all --port=9876
 ```
 
 #### Options
