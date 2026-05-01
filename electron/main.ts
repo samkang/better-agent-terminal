@@ -301,6 +301,16 @@ function getWindowsForProfile(profileId: string | null): BrowserWindow[] {
   return wins
 }
 
+async function getWorkspaceMoveRealm(profileId: string | null): Promise<string> {
+  if (!profileId) return 'local'
+  const profile = await profileManager.getProfile(profileId)
+  if (!profile || profile.type !== 'remote') return 'local'
+  const host = (profile.remoteHost || '').trim().toLowerCase()
+  const port = profile.remotePort || 9876
+  const fingerprint = (profile.remoteFingerprint || '').replace(/:/g, '').trim().toLowerCase()
+  return `remote:${fingerprint || host}:${port}`
+}
+
 /** Reverse lookup: find windowId from a WebContents (for IPC sender context) */
 function getWindowIdByWebContents(wc: Electron.WebContents): string | null {
   for (const [id, win] of windowMap) {
@@ -1339,8 +1349,10 @@ function registerLocalHandlers() {
     const sourceEntry = await windowRegistry.getEntry(sourceWindowId)
     const targetEntry = await windowRegistry.getEntry(targetWindowId)
     if (!sourceEntry || !targetEntry) return false
-    if ((sourceEntry.profileId || null) !== (targetEntry.profileId || null)) {
-      logger.warn(`[workspace] Refused cross-profile move ${workspaceId} from ${sourceWindowId} to ${targetWindowId}`)
+    const sourceRealm = await getWorkspaceMoveRealm(sourceEntry.profileId || null)
+    const targetRealm = await getWorkspaceMoveRealm(targetEntry.profileId || null)
+    if (sourceRealm !== targetRealm) {
+      logger.warn(`[workspace] Refused cross-realm move ${workspaceId} from ${sourceWindowId} (${sourceRealm}) to ${targetWindowId} (${targetRealm})`)
       return false
     }
 

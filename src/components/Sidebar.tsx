@@ -125,7 +125,7 @@ export function Sidebar({
 
   const moveWorkspaceToWindow = useCallback(async (sourceWindowId: string, targetWindowId: string, workspaceId: string, insertIndex: number) => {
     const ok = await window.electronAPI.workspace.moveToWindow(sourceWindowId, targetWindowId, workspaceId, insertIndex)
-    if (!ok) window.alert('Workspace moves only work between windows in the same profile.')
+    if (!ok) window.alert('Workspace moves only work between host windows, or between remote windows on the same remote.')
   }, [])
 
   // Context menu handler

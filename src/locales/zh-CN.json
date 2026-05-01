@@ -80,6 +80,8 @@
     "cxDetected": "已检测到 {{version}}：{{path}}",
     "cxNotDetected": "未检测到：{{error}}",
     "cxCacheDir": "Cache 目录：{{path}}",
+    "cxInstallAgentHint": "还没装 cx？复制下面这段 prompt 给 Claude Code 或 Codex Agent，让 agent 帮你检测系统并安装。参考：",
+    "cxInstallCopyPrompt": "复制安装 prompt",
     "clearTerminalHistory": "清除所有终端指令历史",
     "clearTerminalHistoryConfirm": "确定要删除所有已保存的终端指令历史文件吗？此操作无法恢复。",
     "clearTerminalHistoryDone": "所有终端指令历史文件已清除。",

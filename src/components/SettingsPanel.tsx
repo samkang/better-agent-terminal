@@ -899,6 +899,45 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                       {t('settings.cxCacheDir', { path: cxStatus.cacheDir })}
                     </p>
                   )}
+                  {!cxStatus?.detected && (() => {
+                    const cxAgentPrompt = `Please install the cx semantic code navigation CLI on this machine.
+
+1. Detect the OS and run the matching installer:
+   - macOS:   brew tap ind-igo/cx && brew install cx
+   - Linux:   curl -sL https://raw.githubusercontent.com/ind-igo/cx/master/install.sh | sh
+   - Windows: irm https://raw.githubusercontent.com/ind-igo/cx/master/install.ps1 | iex
+   - or:      cargo install cx-cli  (works on any platform with Rust)
+
+2. Run \`cx --version\` to confirm the install and report the binary path.
+
+3. Suggest a few common languages to add: \`cx lang add typescript python rust go\`
+
+4. Tell me the absolute path to the cx binary so I can paste it into BAT's
+   Settings → Agents → cx semantic navigation → "cx or /path/to/cx" field.
+
+Reference: https://github.com/ind-igo/cx`
+                    return (
+                      <div style={{ marginTop: 10, padding: 10, background: 'rgba(255,255,255,0.03)', borderRadius: 4, border: '1px solid rgba(255,255,255,0.08)' }}>
+                        <p className="settings-hint" style={{ marginTop: 0, marginBottom: 8 }}>
+                          {t('settings.cxInstallAgentHint')}{' '}
+                          <a href="https://github.com/ind-igo/cx" style={{ color: '#58a6ff' }}
+                            onClick={e => { e.preventDefault(); window.electronAPI?.openExternal?.('https://github.com/ind-igo/cx') }}>
+                            github.com/ind-igo/cx
+                          </a>
+                        </p>
+                        <pre style={{ margin: 0, padding: '8px 10px', background: 'rgba(0,0,0,0.3)', borderRadius: 3, fontSize: 11, fontFamily: 'monospace', maxHeight: 140, overflow: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                          {cxAgentPrompt}
+                        </pre>
+                        <button
+                          onClick={() => navigator.clipboard.writeText(cxAgentPrompt)}
+                          style={{ width: 'auto', marginTop: 8, padding: '6px 14px', background: 'transparent', border: '1px solid var(--border-color)', borderRadius: 4, color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 12 }}
+                          title={t('settings.cxInstallCopyPrompt')}
+                        >
+                          {t('settings.cxInstallCopyPrompt')}
+                        </button>
+                      </div>
+                    )
+                  })()}
                 </div>
               </div>
             </>

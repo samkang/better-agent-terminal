@@ -137,6 +137,26 @@ Optional alternate agent backend powered by [`@openai/codex-sdk`](https://www.np
 
 Hidden behind `BAT_DEBUG=1`. Talks directly to the OpenAI Responses API via [`@ai-sdk/openai`](https://sdk.vercel.ai/), without the Codex CLI. Useful for testing tool flows against a raw model. Not recommended for daily use — Codex Agent is the supported path.
 
+### Semantic Code Navigation (cx)
+
+Optional integration with [`cx`](https://github.com/ind-igo/cx) — a tree-sitter-based CLI that gives agents file overviews, symbol search, definitions, and references without spinning up a language server. Useful for cutting context tokens on large codebases: agents can run `cx overview` (~20 tokens) before deciding which files to actually read.
+
+When enabled in **Settings → Agents → cx semantic navigation**, BAT:
+- Detects `cx` on `PATH` (or uses a custom binary path)
+- Appends a short system-prompt section telling the agent to prefer `cx overview / symbols / definition / references` over full file reads
+- Sets `CX_CACHE_DIR` to a per-app cache directory so repeated queries are fast
+
+**Install:**
+
+| Platform | Command |
+|---|---|
+| macOS (Homebrew) | `brew tap ind-igo/cx && brew install cx` |
+| Cargo | `cargo install cx-cli` |
+| macOS / Linux (script) | `curl -sL https://raw.githubusercontent.com/ind-igo/cx/master/install.sh \| sh` |
+| Windows (PowerShell) | `irm https://raw.githubusercontent.com/ind-igo/cx/master/install.ps1 \| iex` |
+
+After installing, run `cx lang add <language>` for each language you want grammars for (e.g. `rust`, `typescript`, `python`), then toggle the option in BAT settings. The toggle is off by default — agents continue to work normally without `cx` installed.
+
 ### Internationalization (i18n)
 - **English**, **Traditional Chinese (繁體中文)**, **Simplified Chinese (简体中文)**
 
@@ -590,6 +610,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 ## Acknowledgments
 
 - **[Overmind](https://github.com/DarthSim/overmind)** — Inspired our Worker panel and Procfile-based multi-process management integration
+- **[cx](https://github.com/ind-igo/cx)** — Semantic code navigation CLI integrated as an optional context-saver for agents
 
 ---
 

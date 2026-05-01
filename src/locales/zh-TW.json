@@ -82,6 +82,8 @@
     "cxDetected": "已偵測到 {{version}}：{{path}}",
     "cxNotDetected": "未偵測到：{{error}}",
     "cxCacheDir": "Cache 目錄：{{path}}",
+    "cxInstallAgentHint": "還沒裝 cx？複製下面這段 prompt 給 Claude Code 或 Codex Agent，讓 agent 幫你偵測作業系統並安裝。參考：",
+    "cxInstallCopyPrompt": "複製安裝 prompt",
     "worktreePnpmInstall": "加速新 worktree 的 pnpm 安裝",
     "worktreePnpmInstallHint": "選用功能，預設關閉。新 worktree 含 pnpm-lock.yaml 時，BAT 會背景執行 pnpm install，使用 pnpm global virtual store 與 repo 內的 .bat-cache/pnpm-store。這會執行專案的 package lifecycle scripts。",
     "clearTerminalHistory": "清除所有終端機指令歷史",
