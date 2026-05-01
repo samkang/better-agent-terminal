@@ -3,6 +3,7 @@ import * as fsSync from 'fs'
 import * as path from 'path'
 import { logger } from './logger'
 import { getDataDir } from './server-core/data-dir'
+import { applyBundledToolEnvironment } from './bundled-tools'
 
 interface SemanticNavigationSettings {
   cxSemanticNavigationEnabled?: boolean
@@ -110,8 +111,9 @@ export function detectCx(options?: { skipLookupWhenDisabled?: boolean }): CxDete
 }
 
 export function applyCxEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const toolEnv = applyBundledToolEnvironment(env)
   const cx = detectCx({ skipLookupWhenDisabled: true })
-  if (!cx.enabled || !cx.detected) return env
+  if (!cx.enabled || !cx.detected) return toolEnv
 
   try {
     fsSync.mkdirSync(cx.cacheDir, { recursive: true })
@@ -120,7 +122,7 @@ export function applyCxEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   }
 
   return {
-    ...env,
+    ...toolEnv,
     CX_CACHE_DIR: cx.cacheDir,
   }
 }

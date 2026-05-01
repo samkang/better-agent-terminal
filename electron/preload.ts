@@ -83,6 +83,7 @@ const electronAPI = {
     getWindowProfile: () => ipcRenderer.invoke('app:get-window-profile') as Promise<string | null>,
     getWindowIndex: () => ipcRenderer.invoke('app:get-window-index') as Promise<number>,
     newWindow: () => ipcRenderer.invoke('app:new-window') as Promise<string>,
+    focusNextWindow: () => ipcRenderer.invoke('app:focus-next-window') as Promise<boolean>,
     setDockBadge: (count: number) => ipcRenderer.invoke('app:set-dock-badge', count),
   },
   update: {

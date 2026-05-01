@@ -8,6 +8,7 @@ import { broadcastHub } from './remote/broadcast-hub'
 import { logger } from './logger'
 import { getDataDir } from './server-core/data-dir'
 import { normalizeInputForPipeShell } from './pty-input'
+import { applyBundledToolEnvironment } from './bundled-tools'
 
 // Per-terminal shell history directory — resolved lazily so getDataDir() runs
 // after the app initializes its data directory.
@@ -245,7 +246,7 @@ export class PtyManager {
     if (ptyAvailable && pty) {
       try {
         // Set UTF-8 and terminal environment variables, merge custom env
-        const envWithUtf8 = {
+        const envWithUtf8 = applyBundledToolEnvironment({
           ...process.env,
           ...customEnv,  // Merge custom environment variables
           ...histEnv,    // Per-terminal HISTFILE (if enabled)
@@ -263,7 +264,7 @@ export class PtyManager {
           FORCE_COLOR: '3',
           // Ensure not detected as CI environment
           CI: ''
-        }
+        })
 
         const ptyProcess = pty.spawn(shell, args, {
           name: 'xterm-256color',
@@ -314,7 +315,7 @@ export class PtyManager {
         }
 
         // Set UTF-8 and terminal environment variables, merge custom env (child_process fallback)
-        const envWithUtf8 = {
+        const envWithUtf8 = applyBundledToolEnvironment({
           ...process.env,
           ...customEnv,  // Merge custom environment variables
           ...histEnv,    // Per-terminal HISTFILE (if enabled)
@@ -330,7 +331,7 @@ export class PtyManager {
           TERM_PROGRAM_VERSION: '1.0',
           FORCE_COLOR: '3',
           CI: ''
-        }
+        })
 
         const childProcess = spawn(shell, shellArgs, {
           cwd,

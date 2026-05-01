@@ -270,6 +270,21 @@ function getAllWindows(): BrowserWindow[] {
   return wins
 }
 
+function focusNextAppWindow(source: Electron.WebContents): boolean {
+  const windows = Array.from(windowMap.values()).filter(win => !win.isDestroyed())
+  if (windows.length <= 1) return false
+
+  const currentIndex = windows.findIndex(win => win.webContents === source)
+  const startIndex = currentIndex >= 0 ? currentIndex : windows.findIndex(win => win.isFocused())
+  const nextIndex = ((startIndex >= 0 ? startIndex : -1) + 1) % windows.length
+  const nextWindow = windows[nextIndex]
+
+  if (nextWindow.isMinimized()) nextWindow.restore()
+  if (!nextWindow.isVisible()) nextWindow.show()
+  nextWindow.focus()
+  return true
+}
+
 /** Sync filter: windows whose registry entry's profileId matches `profileId`.
  *  Used to scope remote event broadcasts to the correct profile's windows. */
 function getWindowsForProfile(profileId: string | null): BrowserWindow[] {
@@ -1261,6 +1276,10 @@ function registerLocalHandlers() {
     const entry = await windowRegistry.createEntry({ profileId })
     createWindow(entry.id)
     return entry.id
+  })
+
+  ipcMain.handle('app:focus-next-window', (event) => {
+    return focusNextAppWindow(event.sender)
   })
 
   // Open profile windows (focus existing if already open, otherwise restore all from snapshot)

@@ -34,6 +34,7 @@
     "@anthropic-ai/claude-code": "^2.1.121",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@openai/codex-sdk": "^0.125.0",
+    "@vscode/ripgrep": "^1.17.1",
     "ai": "^6.0.168",
     "better-sqlite3": "^12.5.0",
     "selfsigned": "^5.5.0",
@@ -103,6 +104,7 @@
     },
     "onlyBuiltDependencies": [
       "@anthropic-ai/claude-code",
+      "@vscode/ripgrep",
       "@lydell/node-pty",
       "better-sqlite3",
       "electron",
@@ -205,6 +207,7 @@
       "node_modules/@openai/codex-darwin-*/**",
       "node_modules/@openai/codex-linux-*/**",
       "node_modules/@openai/codex-win32-*/**",
+      "node_modules/@vscode/ripgrep/bin/**",
       "node_modules/@img/**/*"
     ]
   }

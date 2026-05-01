@@ -146,7 +146,8 @@ Hidden behind `BAT_DEBUG=1`. Talks directly to the OpenAI Responses API via [`@a
 
 | Shortcut | Action |
 |---|---|
-| `Ctrl+`` ` `` / `Cmd+`` ` `` | Toggle between Agent terminal and first regular terminal |
+| `Ctrl+`` ` `` (Windows) | Switch to the next BAT window |
+| `Cmd+`` ` `` (macOS) / `Ctrl+`` ` `` (Linux) | Toggle between Agent terminal and first regular terminal |
 | `Ctrl+←/→` / `Cmd+←/→` | Cycle workspace tabs (Terminal / Files / Git) |
 | `Ctrl+↑/↓` / `Cmd+↑/↓` | Switch to previous / next workspace |
 | `Ctrl+P` / `Cmd+P` | File picker (search & attach files to agent context) |

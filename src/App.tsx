@@ -239,13 +239,23 @@ export default function App() {
   // Track previous terminal for Cmd+` toggle
   const prevTerminalIdRef = useRef<string | null>(null)
 
-  // Keyboard shortcuts: Cmd+` (toggle terminal), Cmd+Left/Right (cycle tabs), Cmd+Up/Down (switch workspace)
+  // Keyboard shortcuts: Cmd+` (toggle terminal), Ctrl+` on Windows (cycle BAT windows),
+  // Cmd/Ctrl+Left/Right (cycle tabs), Cmd/Ctrl+Up/Down (switch workspace)
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || e.altKey) return
 
+      const isBackquote = e.key === '`' || e.code === 'Backquote'
+
+      // Windows: Ctrl+` cycles between BAT app windows.
+      if (window.electronAPI.platform === 'win32' && e.ctrlKey && !e.metaKey && isBackquote && !e.shiftKey) {
+        e.preventDefault()
+        window.electronAPI.app.focusNextWindow()
+        return
+      }
+
       // Cmd+` / Ctrl+`: Toggle between first regular terminal and Claude Code terminal
-      if (e.key === '`' && !e.shiftKey) {
+      if (isBackquote && !e.shiftKey) {
         e.preventDefault()
         const currentState = workspaceStore.getState()
         if (!currentState.activeWorkspaceId) return
