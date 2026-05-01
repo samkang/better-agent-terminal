@@ -427,9 +427,9 @@ function createWindow(windowId: string, bounds?: { x: number; y: number; width: 
 
   // Create managers once (shared across all windows)
   if (!ptyManager) ptyManager = new PtyManager(getAllWindows)
-  if (!claudeManager) claudeManager = new ClaudeAgentManager(getAllWindows)
-  if (!codexManager) codexManager = new CodexAgentManager(getAllWindows)
-  if (!openaiManager) openaiManager = new OpenAIAgentManager(getAllWindows)
+  if (!claudeManager) claudeManager = new ClaudeAgentManager(getAllWindows, getWindowsForProfile)
+  if (!codexManager) codexManager = new CodexAgentManager(getAllWindows, undefined, getWindowsForProfile)
+  if (!openaiManager) openaiManager = new OpenAIAgentManager(getAllWindows, getWindowsForProfile)
 
   const urlParam = `?windowId=${encodeURIComponent(windowId)}`
   if (VITE_DEV_SERVER_URL) {

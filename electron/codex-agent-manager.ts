@@ -36,22 +36,36 @@ function toStringEnv(env: NodeJS.ProcessEnv): Record<string, string> {
 export class CodexAgentManager {
   private sessions: Map<string, CodexSessionInstance> = new Map()
   private getWindows: () => BrowserWindow[]
+  private getWindowsForProfile?: (profileId: string | null) => BrowserWindow[]
   private loadCodexClass: CodexClassLoader
   private resolveCodexBinary: CodexBinaryResolver
 
-  constructor(getWindows: () => BrowserWindow[], deps: { getCodexClass?: CodexClassLoader; findCodexBinary?: CodexBinaryResolver } = {}) {
+  constructor(
+    getWindows: () => BrowserWindow[],
+    deps: { getCodexClass?: CodexClassLoader; findCodexBinary?: CodexBinaryResolver } = {},
+    getWindowsForProfile?: (profileId: string | null) => BrowserWindow[]
+  ) {
     this.getWindows = getWindows
+    this.getWindowsForProfile = getWindowsForProfile
     this.loadCodexClass = deps.getCodexClass || getCodexClass
     this.resolveCodexBinary = deps.findCodexBinary || findCodexBinary
   }
 
-  private send(channel: string, ...args: unknown[]) {
-    for (const win of this.getWindows()) {
+  private getTargetWindows(sessionId: string): BrowserWindow[] {
+    const ownerProfileId = this.sessions.get(sessionId)?.ownerProfileId ?? null
+    if (ownerProfileId && this.getWindowsForProfile) {
+      return this.getWindowsForProfile(ownerProfileId)
+    }
+    return this.getWindows()
+  }
+
+  private send(channel: string, sessionId: string, ...args: unknown[]) {
+    for (const win of this.getTargetWindows(sessionId)) {
       if (!win.isDestroyed()) {
-        win.webContents.send(channel, ...args)
+        win.webContents.send(channel, sessionId, ...args)
       }
     }
-    broadcastHub.broadcast(channel, ...args)
+    broadcastHub.broadcast(channel, sessionId, ...args)
   }
 
   private static readonly MSG_BUFFER_CAP = 300
@@ -262,6 +276,7 @@ export class CodexAgentManager {
     useWorktree?: boolean
     worktreePath?: string
     worktreeBranch?: string
+    ownerProfileId?: string | null
     [key: string]: unknown
   }): Promise<boolean> {
     if (this.sessions.has(sessionId)) return true
@@ -324,6 +339,7 @@ export class CodexAgentManager {
     const session: CodexSessionInstance = {
       abortController: new AbortController(),
       state: { sessionId, messages: [], isStreaming: false },
+      ownerProfileId: options.ownerProfileId ?? null,
       cwd: effectiveCwd,
       metadata: {
         ...this.makeMetadata(),
@@ -815,7 +831,8 @@ export class CodexAgentManager {
     codexApprovalPolicy?: CodexApprovalPolicy,
     useWorktree?: boolean,
     worktreePath?: string,
-    worktreeBranch?: string
+    worktreeBranch?: string,
+    ownerProfileId?: string | null
   ): Promise<boolean> {
     sdkThreadIds.set(sessionId, threadId)
     // Signal "loading" immediately so the panel can render a skeleton while the
@@ -827,6 +844,7 @@ export class CodexAgentManager {
       ...(codexSandboxMode ? { codexSandboxMode } : {}),
       ...(codexApprovalPolicy ? { codexApprovalPolicy } : {}),
       ...(useWorktree ? { useWorktree: true, worktreePath, worktreeBranch } : {}),
+      ownerProfileId,
     })
     if (result) {
       await this.loadSessionHistory(sessionId, threadId).catch(err => {

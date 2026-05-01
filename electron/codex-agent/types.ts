@@ -32,6 +32,7 @@ export interface QueuedMessage {
 export interface CodexSessionInstance {
   abortController: AbortController
   state: ClaudeSessionState
+  ownerProfileId: string | null
   threadId?: string
   cwd: string
   metadata: SessionMetadata

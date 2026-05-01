@@ -250,17 +250,19 @@ export function registerProxiedHandlers(deps: ProxiedHandlersDeps): void {
   }
 
   // Claude Agent SDK
-  registerHandler('claude:start-session', (_ctx, sessionId: string, options: { cwd: string; prompt?: string; permissionMode?: string; model?: string; effort?: string; apiVersion?: 'v1' | 'v2'; useWorktree?: boolean; worktreePath?: string; worktreeBranch?: string; autoCompactWindow?: number; agentPreset?: string; codexSandboxMode?: string; codexApprovalPolicy?: string }) => {
+  registerHandler('claude:start-session', async (ctx, sessionId: string, options: { cwd: string; prompt?: string; permissionMode?: string; model?: string; effort?: string; apiVersion?: 'v1' | 'v2'; useWorktree?: boolean; worktreePath?: string; worktreeBranch?: string; autoCompactWindow?: number; agentPreset?: string; codexSandboxMode?: string; codexApprovalPolicy?: string }) => {
+    const ownerProfileId = ctx.windowId ? (await windowRegistry.getEntry(ctx.windowId))?.profileId ?? null : null
+    const startOptions = { ...options, ownerProfileId }
     if (options.agentPreset === 'codex-agent' || options.agentPreset === 'codex-agent-worktree') {
       sessionManagerMap.set(sessionId, 'codex')
-      return getCodexManager()?.startSession(sessionId, options)
+      return getCodexManager()?.startSession(sessionId, startOptions)
     }
     if (options.agentPreset === 'openai-agent') {
       sessionManagerMap.set(sessionId, 'openai')
-      return getOpenAIManager()?.startSession(sessionId, options)
+      return getOpenAIManager()?.startSession(sessionId, startOptions)
     }
     sessionManagerMap.set(sessionId, 'claude')
-    return getClaudeManager()?.startSession(sessionId, options)
+    return getClaudeManager()?.startSession(sessionId, startOptions)
   })
   registerHandler('claude:send-message', (_ctx, sessionId: string, prompt: string, images?: string[], autoCompactWindow?: number | null) => {
     const mgr = getManager(sessionId)
@@ -456,7 +458,8 @@ export function registerProxiedHandlers(deps: ProxiedHandlersDeps): void {
   registerHandler('openai:set-api-key', async (_ctx, key: string) => { await setOpenAIKey(key); return true })
   registerHandler('openai:clear-api-key', async () => { await clearOpenAIKey(); return true })
   registerHandler('openai:compact-now', (_ctx, sessionId: string) => getOpenAIManager()?.compactNow(sessionId) ?? false)
-  registerHandler('claude:resume-session', (_ctx, sessionId: string, sdkSessionId: string, cwd: string, model?: string, apiVersion?: 'v1' | 'v2', useWorktree?: boolean, worktreePath?: string, worktreeBranch?: string, agentPreset?: string, codexSandboxMode?: 'read-only' | 'workspace-write' | 'danger-full-access', codexApprovalPolicy?: 'untrusted' | 'on-request' | 'never', permissionMode?: string, effort?: string) => {
+  registerHandler('claude:resume-session', async (ctx, sessionId: string, sdkSessionId: string, cwd: string, model?: string, apiVersion?: 'v1' | 'v2', useWorktree?: boolean, worktreePath?: string, worktreeBranch?: string, agentPreset?: string, codexSandboxMode?: 'read-only' | 'workspace-write' | 'danger-full-access', codexApprovalPolicy?: 'untrusted' | 'on-request' | 'never', permissionMode?: string, effort?: string) => {
+    const ownerProfileId = ctx.windowId ? (await windowRegistry.getEntry(ctx.windowId))?.profileId ?? null : null
     const explicitType: 'claude' | 'codex' | 'openai' =
       (agentPreset === 'codex-agent' || agentPreset === 'codex-agent-worktree') ? 'codex' :
       agentPreset === 'openai-agent' ? 'openai' : 'claude'
@@ -472,11 +475,12 @@ export function registerProxiedHandlers(deps: ProxiedHandlersDeps): void {
         codexApprovalPolicy,
         useWorktree,
         worktreePath,
-        worktreeBranch
+        worktreeBranch,
+        ownerProfileId
       )
     }
-    if (type === 'openai') return getOpenAIManager()?.resumeSession(sessionId, sdkSessionId, cwd, model, permissionMode, effort)
-    return getClaudeManager()?.resumeSession(sessionId, sdkSessionId, cwd, model, apiVersion, useWorktree, worktreePath, worktreeBranch)
+    if (type === 'openai') return getOpenAIManager()?.resumeSession(sessionId, sdkSessionId, cwd, model, permissionMode, effort, ownerProfileId)
+    return getClaudeManager()?.resumeSession(sessionId, sdkSessionId, cwd, model, apiVersion, useWorktree, worktreePath, worktreeBranch, ownerProfileId)
   })
   registerHandler('claude:fork-session', (_ctx, sessionId: string) => getManager(sessionId)?.forkSession(sessionId))
   registerHandler('claude:rewind-to-prompt', (_ctx, sessionId: string, promptIndex: number) => {

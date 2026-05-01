@@ -65,6 +65,7 @@ interface PendingAskUser {
 interface OpenAISessionInstance {
   abortController: AbortController
   state: ClaudeSessionState
+  ownerProfileId: string | null
   cwd: string
   metadata: SessionMetadata
   model: string
@@ -144,17 +145,27 @@ async function getAI() {
 export class OpenAIAgentManager {
   private sessions: Map<string, OpenAISessionInstance> = new Map()
   private getWindows: () => BrowserWindow[]
+  private getWindowsForProfile?: (profileId: string | null) => BrowserWindow[]
   private static readonly MSG_BUFFER_CAP = 300
 
-  constructor(getWindows: () => BrowserWindow[]) {
+  constructor(getWindows: () => BrowserWindow[], getWindowsForProfile?: (profileId: string | null) => BrowserWindow[]) {
     this.getWindows = getWindows
+    this.getWindowsForProfile = getWindowsForProfile
   }
 
-  private send(channel: string, ...args: unknown[]) {
-    for (const win of this.getWindows()) {
-      if (!win.isDestroyed()) win.webContents.send(channel, ...args)
+  private getTargetWindows(sessionId: string): BrowserWindow[] {
+    const ownerProfileId = this.sessions.get(sessionId)?.ownerProfileId ?? null
+    if (ownerProfileId && this.getWindowsForProfile) {
+      return this.getWindowsForProfile(ownerProfileId)
     }
-    broadcastHub.broadcast(channel, ...args)
+    return this.getWindows()
+  }
+
+  private send(channel: string, sessionId: string, ...args: unknown[]) {
+    for (const win of this.getTargetWindows(sessionId)) {
+      if (!win.isDestroyed()) win.webContents.send(channel, sessionId, ...args)
+    }
+    broadcastHub.broadcast(channel, sessionId, ...args)
   }
 
   private makeMetadata(model: string | undefined, cwd: string): SessionMetadata {
@@ -403,6 +414,7 @@ export class OpenAIAgentManager {
     apiVersion?: string
     agentPreset?: string
     resumeSdkSessionId?: string
+    ownerProfileId?: string | null
     [key: string]: unknown
   }): Promise<boolean> {
     if (this.sessions.has(sessionId)) return true
@@ -422,6 +434,7 @@ export class OpenAIAgentManager {
     const session: OpenAISessionInstance = {
       abortController: new AbortController(),
       state: { sessionId, messages: [], isStreaming: false },
+      ownerProfileId: options.ownerProfileId ?? null,
       cwd: options.cwd,
       metadata: { ...this.makeMetadata(model, options.cwd), sdkSessionId },
       model,
@@ -897,8 +910,15 @@ export class OpenAIAgentManager {
   }
   isResting(_sessionId: string): boolean { return false }
 
-  async resumeSession(sessionId: string, sdkSessionId: string, cwd: string, model?: string, permissionMode?: string, effort?: string): Promise<boolean> {
-    return this.startSession(sessionId, { cwd, model, permissionMode, effort, resumeSdkSessionId: sdkSessionId })
+  async resumeSession(sessionId: string, sdkSessionId: string, cwd: string, model?: string, permissionMode?: string, effort?: string, ownerProfileId?: string | null): Promise<boolean> {
+    return this.startSession(sessionId, {
+      cwd,
+      model,
+      permissionMode,
+      effort,
+      resumeSdkSessionId: sdkSessionId,
+      ownerProfileId,
+    })
   }
 
   getSessionState(sessionId: string): ClaudeSessionState | null {

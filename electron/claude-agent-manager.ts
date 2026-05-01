@@ -224,6 +224,7 @@ interface ActiveTask {
 interface SessionInstance {
   abortController: AbortController
   state: ClaudeSessionState
+  ownerProfileId: string | null
   sdkSessionId?: string
   cwd: string
   metadata: SessionMetadata
@@ -257,10 +258,12 @@ const sdkSessionIds = new Map<string, string>()
 export class ClaudeAgentManager {
   private sessions: Map<string, SessionInstance> = new Map()
   private getWindows: () => BrowserWindow[]
+  private getWindowsForProfile?: (profileId: string | null) => BrowserWindow[]
   private healthCheckTimer: ReturnType<typeof setInterval> | null = null
 
-  constructor(getWindows: () => BrowserWindow[]) {
+  constructor(getWindows: () => BrowserWindow[], getWindowsForProfile?: (profileId: string | null) => BrowserWindow[]) {
     this.getWindows = getWindows
+    this.getWindowsForProfile = getWindowsForProfile
     // Health check: detect stalled subagents every 45s
     this.healthCheckTimer = setInterval(() => this.checkStalledTasks(), 45_000)
   }
@@ -282,13 +285,21 @@ export class ClaudeAgentManager {
     }
   }
 
-  private send(channel: string, ...args: unknown[]) {
-    for (const win of this.getWindows()) {
+  private getTargetWindows(sessionId: string): BrowserWindow[] {
+    const ownerProfileId = this.sessions.get(sessionId)?.ownerProfileId ?? null
+    if (ownerProfileId && this.getWindowsForProfile) {
+      return this.getWindowsForProfile(ownerProfileId)
+    }
+    return this.getWindows()
+  }
+
+  private send(channel: string, sessionId: string, ...args: unknown[]) {
+    for (const win of this.getTargetWindows(sessionId)) {
       if (!win.isDestroyed()) {
-        win.webContents.send(channel, ...args)
+        win.webContents.send(channel, sessionId, ...args)
       }
     }
-    broadcastHub.broadcast(channel, ...args)
+    broadcastHub.broadcast(channel, sessionId, ...args)
   }
 
   /**
@@ -378,7 +389,7 @@ export class ClaudeAgentManager {
     this.send('claude:tool-result', sessionId, { id: toolId, ...updates })
   }
 
-  async startSession(sessionId: string, options: { cwd: string; prompt?: string; sdkSessionId?: string; permissionMode?: AppPermissionMode; model?: string; effort?: EffortLevel; apiVersion?: 'v1' | 'v2'; useWorktree?: boolean; worktreePath?: string; worktreeBranch?: string; autoCompactWindow?: number }): Promise<boolean> {
+  async startSession(sessionId: string, options: { cwd: string; prompt?: string; sdkSessionId?: string; permissionMode?: AppPermissionMode; model?: string; effort?: EffortLevel; apiVersion?: 'v1' | 'v2'; useWorktree?: boolean; worktreePath?: string; worktreeBranch?: string; autoCompactWindow?: number; ownerProfileId?: string | null }): Promise<boolean> {
     // Prevent duplicate session creation
     if (this.sessions.has(sessionId)) {
       return true
@@ -449,6 +460,7 @@ export class ClaudeAgentManager {
       this.sessions.set(sessionId, {
         abortController,
         state,
+        ownerProfileId: options.ownerProfileId ?? null,
         sdkSessionId: previousSdkSessionId,
         cwd: effectiveCwd,
         metadata: {
@@ -2414,7 +2426,7 @@ export class ClaudeAgentManager {
     this.send('claude:history', sessionId, items)
   }
 
-  async resumeSession(sessionId: string, sdkSessionIdToResume: string, cwd: string, model?: string, apiVersion?: 'v1' | 'v2', useWorktree?: boolean, worktreePath?: string, worktreeBranch?: string): Promise<boolean> {
+  async resumeSession(sessionId: string, sdkSessionIdToResume: string, cwd: string, model?: string, apiVersion?: 'v1' | 'v2', useWorktree?: boolean, worktreePath?: string, worktreeBranch?: string, ownerProfileId?: string | null): Promise<boolean> {
     // Stop current session if running
     const session = this.sessions.get(sessionId)
     if (session) {
@@ -2428,6 +2440,7 @@ export class ClaudeAgentManager {
     const result = await this.startSession(sessionId, {
       cwd, sdkSessionId: sdkSessionIdToResume, model, permissionMode: 'bypassPermissions', apiVersion,
       ...(useWorktree ? { useWorktree: true, worktreePath, worktreeBranch } : {}),
+      ownerProfileId,
     })
     return result
   }
@@ -2481,6 +2494,7 @@ export class ClaudeAgentManager {
       worktreePath: existingWorktreeInfo?.worktreePath,
       worktreeBranch: existingWorktreeInfo?.branchName,
       autoCompactWindow,
+      ownerProfileId: session.ownerProfileId,
     })
     if (ok) {
       const newSession = this.sessions.get(sessionId)
