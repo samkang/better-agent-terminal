@@ -42,6 +42,8 @@ jobs:
           cache: 'pnpm'
 
       - name: Install dependencies
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm install --frozen-lockfile
 
       - name: Verify Codex resume fallback
