@@ -194,7 +194,20 @@ interface FilePreviewModalProps {
   onClose: () => void
 }
 
-export function FilePreviewModal({ filePath, onClose }: FilePreviewModalProps) {
+// Strip a trailing ":line" or ":line:col" hint from a path. Handles Windows
+// drive letters (e.g. "C:\foo\bar.cs:50") by only stripping after a non-drive
+// colon. Some callers (chat citations, stdout pastes) include the line suffix;
+// fs.stat / fs.readFile would reject it on Windows because ':' is invalid in
+// file names.
+function stripLineSuffix(p: string): { path: string; line?: number; column?: number } {
+  if (!p) return { path: p }
+  const m = p.match(/^(.+?\.[A-Za-z0-9]{1,10}):(\d+)(?::(\d+))?$/)
+  if (!m) return { path: p }
+  return { path: m[1], line: Number(m[2]), column: m[3] ? Number(m[3]) : undefined }
+}
+
+export function FilePreviewModal({ filePath: rawFilePath, onClose }: FilePreviewModalProps) {
+  const { path: filePath } = stripLineSuffix(rawFilePath)
   const [content, setContent] = useState<string | null>(null)
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)

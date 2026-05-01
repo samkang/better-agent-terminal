@@ -85,8 +85,16 @@ export function renderChatMarkdown(text: string, cwd: string): string {
         (match, attrs, href) => {
           if (/^(?:https?|mailto|tel|file):/i.test(href)) return match
           const isAbs = href.startsWith('/') || /^[A-Za-z]:[\\/]/.test(href)
-          const absPath = isAbs ? href : resolveRelativePath(cwd, href)
-          return `<a ${attrs}href="${absPathToFileUrl(absPath)}"`
+          // Strip a trailing ":line" or ":line:col" suffix so the file URL is
+          // a plain path; preserve the location as the URL fragment instead.
+          // Without this, the colon survives into url.pathname downstream and
+          // fs.stat rejects the path on Windows (':' is invalid in filenames).
+          const suffixMatch = href.match(/^(.+?\.[A-Za-z0-9]{1,10}):(\d+)(?::(\d+))?$/)
+          const cleanHref = suffixMatch ? suffixMatch[1] : href
+          const line = suffixMatch ? Number(suffixMatch[2]) : undefined
+          const column = suffixMatch?.[3] ? Number(suffixMatch[3]) : undefined
+          const absPath = isAbs ? cleanHref : resolveRelativePath(cwd, cleanHref)
+          return `<a ${attrs}href="${pathToFileUrl(absPath, line, column)}"`
         }
       )
     : parsedHtml
