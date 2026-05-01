@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { CreatePtyOptions } from '../src/types'
+import type { NotificationEntry } from './notification-center'
 
 const electronAPI = {
   platform: process.platform as 'win32' | 'darwin' | 'linux',
@@ -430,6 +431,20 @@ const electronAPI = {
     getCategories: () => ipcRenderer.invoke('snippet:getCategories'),
     getFavorites: () => ipcRenderer.invoke('snippet:getFavorites'),
     getByWorkspace: (workspaceId?: string) => ipcRenderer.invoke('snippet:getByWorkspace', workspaceId)
+  },
+  notification: {
+    list: () => ipcRenderer.invoke('notification:list') as Promise<NotificationEntry[]>,
+    markRead: (id: string) => ipcRenderer.invoke('notification:mark-read', id) as Promise<boolean>,
+    markAllRead: () => ipcRenderer.invoke('notification:mark-all-read') as Promise<boolean>,
+    markWindowRead: () => ipcRenderer.invoke('notification:mark-window-read') as Promise<boolean>,
+    clear: () => ipcRenderer.invoke('notification:clear') as Promise<boolean>,
+    focusLatestUnread: () => ipcRenderer.invoke('notification:focus-latest-unread') as Promise<{ id: string; windowId: string } | null>,
+    focusEntry: (id: string) => ipcRenderer.invoke('notification:focus-entry', id) as Promise<{ id: string; windowId: string } | null>,
+    onUpdate: (callback: (entries: NotificationEntry[]) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, entries: NotificationEntry[]) => callback(entries)
+      ipcRenderer.on('notification:update', handler)
+      return () => ipcRenderer.removeListener('notification:update', handler)
+    },
   },
   workerBuffer: {
     init: (panelId: string) => ipcRenderer.invoke('worker-buffer:init', panelId),

@@ -155,6 +155,18 @@
     "failedToStartServer": "啟動伺服器失敗：{{error}}"
   },
 
+  "notifications": {
+    "title": "通知",
+    "ends": "已完成",
+    "empty": "目前沒有通知",
+    "markAllRead": "全部標為已讀",
+    "clear": "清除",
+    "justNow": "剛才",
+    "minutesAgo": "{{count}} 分鐘前",
+    "hoursAgo": "{{count}} 小時前",
+    "daysAgo": "{{count}} 天前"
+  },
+
   "sidebar": {
     "workspaces": "工作區",
     "all": "全部",

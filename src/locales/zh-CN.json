@@ -150,6 +150,17 @@
     "footerNote": "所有变更会自动保存。字体变更会立即应用至所有终端。",
     "failedToStartServer": "启动服务器失败：{{error}}"
   },
+  "notifications": {
+    "title": "通知",
+    "ends": "已完成",
+    "empty": "目前没有通知",
+    "markAllRead": "全部标为已读",
+    "clear": "清除",
+    "justNow": "刚才",
+    "minutesAgo": "{{count}} 分钟前",
+    "hoursAgo": "{{count}} 小时前",
+    "daysAgo": "{{count}} 天前"
+  },
   "sidebar": {
     "workspaces": "工作区",
     "all": "全部",

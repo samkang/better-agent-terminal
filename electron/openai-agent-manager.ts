@@ -4,6 +4,7 @@ import type { SessionSummary } from './openai-agent/persistence'
 import { prepareImageForApi } from './image-utils'
 import { logger } from './logger'
 import { broadcastHub } from './remote/broadcast-hub'
+import { notificationCenter } from './notification-center'
 import { wrapInterruptedPrompt } from './agent-prompt-utils'
 import { buildBuiltinTools } from './openai-tools/registry'
 import { TOOL_CONTEXT_KEY, type OpenAIAskUserQuestion, type OpenAIPermissionMode, type OpenAIToolContext } from './openai-tools/context'
@@ -770,6 +771,14 @@ export class OpenAIAgentManager {
               reason: 'completed',
               totalCost: session.metadata.totalCost,
               totalTokens,
+            })
+            notificationCenter.add({
+              sessionId,
+              profileId: session.ownerProfileId,
+              cwd: session.cwd,
+              reason: 'completed',
+              result: currentAssistantText || undefined,
+              agentKind: 'openai',
             })
             break
           }

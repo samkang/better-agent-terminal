@@ -254,6 +254,13 @@ export default function App() {
         return
       }
 
+      // Ctrl+Tab (Win + Mac): jump to window with most recent unread notification.
+      if (e.ctrlKey && !e.metaKey && !e.shiftKey && (e.key === 'Tab' || e.code === 'Tab')) {
+        e.preventDefault()
+        window.electronAPI.notification.focusLatestUnread()
+        return
+      }
+
       // Cmd+` / Ctrl+`: Toggle between first regular terminal and Claude Code terminal
       if (isBackquote && !e.shiftKey) {
         e.preventDefault()

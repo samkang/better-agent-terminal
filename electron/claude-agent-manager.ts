@@ -25,6 +25,7 @@ import {
 // bypassPlan = plan mode (read-only exploration) + auto-approve all tool permissions
 type AppPermissionMode = PermissionMode | 'bypassPlan'
 import { broadcastHub } from './remote/broadcast-hub'
+import { notificationCenter } from './notification-center'
 import { getDataDir } from './server-core/data-dir'
 import { getNotifier } from './server-core/notifier'
 import { applyCxEnvironment, buildCxSystemPromptAppend } from './semantic-navigation'
@@ -1568,6 +1569,17 @@ export class ClaudeAgentManager {
         result: resultMsg.result,
         error: resultMsg.subtype !== 'success' ? (typeof resultMsg.errors === 'string' ? resultMsg.errors : resultMsg.subtype) : undefined,
       })
+
+      if (resultMsg.subtype === 'success') {
+        notificationCenter.add({
+          sessionId,
+          profileId: session.ownerProfileId,
+          cwd: session.cwd,
+          reason: 'completed',
+          result: resultMsg.result,
+          agentKind: 'claude',
+        })
+      }
 
       this.sendCompletionNotification(session, resultMsg.result)
     }

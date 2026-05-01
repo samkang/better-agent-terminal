@@ -155,6 +155,18 @@
     "failedToStartServer": "Failed to start server: {{error}}"
   },
 
+  "notifications": {
+    "title": "Notifications",
+    "ends": "ends",
+    "empty": "No notifications yet",
+    "markAllRead": "Mark all read",
+    "clear": "Clear",
+    "justNow": "just now",
+    "minutesAgo": "{{count}}m ago",
+    "hoursAgo": "{{count}}h ago",
+    "daysAgo": "{{count}}d ago"
+  },
+
   "sidebar": {
     "workspaces": "Workspaces",
     "all": "All",

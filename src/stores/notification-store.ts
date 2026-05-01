@@ -1,0 +1,81 @@
+export interface NotificationEntry {
+  id: string
+  sessionId: string
+  windowId: string | null
+  profileId: string | null
+  workspaceName: string
+  cwd: string
+  reason: 'completed' | 'error' | 'aborted'
+  result?: string
+  error?: string
+  timestamp: number
+  read: boolean
+  agentKind?: 'claude' | 'codex' | 'openai'
+}
+
+type Listener = () => void
+
+class NotificationStore {
+  private entries: NotificationEntry[] = []
+  private listeners: Set<Listener> = new Set()
+  private subscribed = false
+  private unsubscribePush?: () => void
+
+  getEntries(): NotificationEntry[] {
+    return this.entries
+  }
+
+  unreadCount(): number {
+    return this.entries.reduce((n, e) => (e.read ? n : n + 1), 0)
+  }
+
+  subscribe(listener: Listener): () => void {
+    this.listeners.add(listener)
+    return () => this.listeners.delete(listener)
+  }
+
+  private emit(): void {
+    for (const l of this.listeners) l()
+  }
+
+  async init(): Promise<void> {
+    if (this.subscribed) return
+    this.subscribed = true
+    try {
+      this.entries = await window.electronAPI.notification.list()
+      this.emit()
+    } catch { /* ignore */ }
+    this.unsubscribePush = window.electronAPI.notification.onUpdate((entries) => {
+      this.entries = entries
+      this.emit()
+    })
+  }
+
+  dispose(): void {
+    this.unsubscribePush?.()
+    this.unsubscribePush = undefined
+    this.subscribed = false
+  }
+
+  async markRead(id: string): Promise<void> {
+    await window.electronAPI.notification.markRead(id)
+  }
+
+  async markAllRead(): Promise<void> {
+    await window.electronAPI.notification.markAllRead()
+  }
+
+  async clear(): Promise<void> {
+    await window.electronAPI.notification.clear()
+  }
+
+  async focusEntry(id: string): Promise<void> {
+    await window.electronAPI.notification.focusEntry(id)
+  }
+
+  async focusLatestUnread(): Promise<{ id: string; windowId: string } | null> {
+    return window.electronAPI.notification.focusLatestUnread()
+  }
+}
+
+export const notificationStore = new NotificationStore()

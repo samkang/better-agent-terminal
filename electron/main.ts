@@ -8,6 +8,7 @@ import { setSafeStorage } from './server-core/safe-storage'
 import { setNotifier } from './server-core/notifier'
 import { registerProxiedHandlers } from './server-core/register-handlers'
 import { WindowRegistry } from './window-registry'
+import { notificationCenter, type NotificationEntry } from './notification-center'
 
 // Fix PATH for GUI-launched apps on macOS.
 // When launched via .dmg / Applications, macOS gives a minimal PATH that
@@ -1317,6 +1318,60 @@ function registerLocalHandlers() {
 
   ipcMain.handle('app:focus-next-window', (event) => {
     return focusNextAppWindow(event.sender)
+  })
+
+  // ─── Notification center ────────────────────────────────────────
+  // Resolve profileId → windowId for incoming notifications
+  notificationCenter.setWindowResolver((profileId) => {
+    if (!profileId) return null
+    const entries = windowRegistry.getCachedEntries()
+    const matchIds = entries.filter(e => e.profileId === profileId).map(e => e.id)
+    for (const id of matchIds) {
+      const win = windowMap.get(id)
+      if (win && !win.isDestroyed()) return id
+    }
+    // No live window for the profile — pick the most recent matching entry
+    const sorted = entries.filter(e => e.profileId === profileId).sort((a, b) => b.lastActiveAt - a.lastActiveAt)
+    return sorted[0]?.id ?? null
+  })
+
+  // Broadcast list updates to all windows (cross-window state sync)
+  notificationCenter.on('change', (entries: NotificationEntry[]) => {
+    for (const win of getAllWindows()) {
+      try { win.webContents.send('notification:update', entries) } catch { /* ignore */ }
+    }
+  })
+
+  ipcMain.handle('notification:list', () => notificationCenter.list())
+  ipcMain.handle('notification:mark-read', (_event, id: string) => notificationCenter.markRead(id))
+  ipcMain.handle('notification:mark-all-read', () => { notificationCenter.markAllRead(); return true })
+  ipcMain.handle('notification:mark-window-read', (event) => {
+    const wid = getWindowIdByWebContents(event.sender)
+    if (wid) notificationCenter.markWindowRead(wid)
+    return true
+  })
+  ipcMain.handle('notification:clear', () => { notificationCenter.clear(); return true })
+  ipcMain.handle('notification:focus-latest-unread', () => {
+    const entry = notificationCenter.getLatestUnread()
+    if (!entry || !entry.windowId) return null
+    const win = windowMap.get(entry.windowId)
+    if (!win || win.isDestroyed()) return null
+    if (win.isMinimized()) win.restore()
+    if (!win.isVisible()) win.show()
+    win.focus()
+    notificationCenter.markRead(entry.id)
+    return { id: entry.id, windowId: entry.windowId }
+  })
+  ipcMain.handle('notification:focus-entry', (_event, id: string) => {
+    const entry = notificationCenter.list().find(e => e.id === id)
+    if (!entry || !entry.windowId) return null
+    const win = windowMap.get(entry.windowId)
+    if (!win || win.isDestroyed()) return null
+    if (win.isMinimized()) win.restore()
+    if (!win.isVisible()) win.show()
+    win.focus()
+    notificationCenter.markRead(id)
+    return { id, windowId: entry.windowId }
   })
 
   // Open profile windows (focus existing if already open, otherwise restore all from snapshot)

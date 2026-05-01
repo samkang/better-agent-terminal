@@ -5,6 +5,7 @@ import type { ClaudeMessage, ClaudeToolCall, ClaudeSessionState } from '../src/t
 import type { SessionSummary } from './claude-agent-manager'
 import { logger } from './logger'
 import { broadcastHub } from './remote/broadcast-hub'
+import { notificationCenter } from './notification-center'
 import { wrapInterruptedPrompt } from './agent-prompt-utils'
 import { worktreeManager } from './worktree-manager'
 import type { WorktreeInfo } from './worktree-manager'
@@ -653,6 +654,14 @@ export class CodexAgentManager {
               totalCost: session.metadata.totalCost,
               totalTokens: session.metadata.inputTokens + session.metadata.outputTokens,
               result: itemState.currentAssistantText || undefined,
+            })
+            notificationCenter.add({
+              sessionId,
+              profileId: session.ownerProfileId ?? null,
+              cwd: session.cwd,
+              reason: 'completed',
+              result: itemState.currentAssistantText || undefined,
+              agentKind: 'codex',
             })
             break
           }

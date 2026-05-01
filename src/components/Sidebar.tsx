@@ -4,6 +4,7 @@ import type { Workspace } from '../types'
 import { WORKSPACE_COLORS } from '../types'
 import { workspaceStore } from '../stores/workspace-store'
 import { ActivityIndicator } from './ActivityIndicator'
+import { NotificationBell } from './NotificationBell'
 
 interface SidebarProps {
   width: number
@@ -470,6 +471,7 @@ export function Sidebar({
         )}
       </div>
       <div className="sidebar-footer">
+        <NotificationBell />
         <button className="add-workspace-btn" onClick={onAddWorkspace}>
           {t('sidebar.addWorkspace')}
         </button>
