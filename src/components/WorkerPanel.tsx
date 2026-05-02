@@ -346,7 +346,7 @@ export const WorkerPanel = memo(function WorkerPanel({ terminalId, procfilePath,
         command: entry.command,
         ptyId: `${terminalId}__w__${entry.name}`,
         color: WORKER_COLORS[i % WORKER_COLORS.length],
-        autoStart: autoStartPrefs[entry.name] !== false,
+        autoStart: autoStartPrefs[entry.name] === true,
         status: 'stopped' as ProcessStatus,
       }
       writeOutput(proc.name, proc.color, `\n\x1b[32mAdded from Procfile\x1b[0m\n`)
@@ -458,6 +458,25 @@ export const WorkerPanel = memo(function WorkerPanel({ terminalId, procfilePath,
     terminal.loadAddon(unicode11Addon)
     terminal.unicode.activeVersion = '11'
     terminal.open(containerRef.current)
+    terminal.attachCustomKeyEventHandler((event) => {
+      if (event.type !== 'keydown') return true
+
+      if (event.ctrlKey && event.shiftKey && event.key === 'C') {
+        const selection = terminal.getSelection()
+        if (selection) navigator.clipboard.writeText(selection)
+        return false
+      }
+
+      if (event.ctrlKey && !event.shiftKey && event.key.toLowerCase() === 'c') {
+        const selection = terminal.getSelection()
+        if (selection) {
+          navigator.clipboard.writeText(selection)
+          return false
+        }
+      }
+
+      return true
+    })
 
     terminalRef.current = terminal
     fitAddonRef.current = fitAddon
@@ -567,7 +586,7 @@ export const WorkerPanel = memo(function WorkerPanel({ terminalId, procfilePath,
         command: entry.command,
         ptyId: `${terminalId}__w__${entry.name}`,
         color: WORKER_COLORS[i % WORKER_COLORS.length],
-        autoStart: autoStartPrefs[entry.name] !== false, // default true
+        autoStart: autoStartPrefs[entry.name] === true, // default false until explicitly enabled
         status: 'stopped' as ProcessStatus,
       }))
 
