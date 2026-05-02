@@ -14,6 +14,7 @@ import { ChatMarkdown } from './ChatMarkdown'
 import { filenameForPastedImage, readFileAsDataUrl } from '../utils/file-data-url'
 import { extractInterruptedContinuation } from '../utils/interrupted-prompt'
 import { firstMeaningfulLine, formatContentSize, truncateMiddle } from './CodexAgentPanel.helpers'
+import { normalizePendingAskUser, summarizeAskUserInput } from './AskUserQuestion.helpers'
 
 interface SessionMeta {
   model?: string
@@ -969,7 +970,7 @@ export function OpenAIAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
 
       api.onAskUser((sid: string, data: unknown) => {
         if (sid !== sessionId) return
-        setPendingQuestion(data as PendingAskUser)
+        setPendingQuestion(normalizePendingAskUser(data) as PendingAskUser)
         setAskAnswers({})
         setAskOtherText({})
       }),
@@ -2498,6 +2499,8 @@ export function OpenAIAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
 
   const toolInputSummary = (_toolName: string, input: Record<string, unknown>): string => {
     // Show a compact one-line summary of tool input
+    const askUserSummary = summarizeAskUserInput(input)
+    if (askUserSummary) return askUserSummary
     if (input.command) return String(input.command).slice(0, 80)
     if (input.path) return String(input.path)
     if (input.file_path) return String(input.file_path)

@@ -29,11 +29,11 @@
     "test:codex-resume": "tsx tests/codex-resume-fallback.test.ts"
   },
   "dependencies": {
-    "@ai-sdk/openai": "^3.0.53",
-    "@anthropic-ai/claude-agent-sdk": "^0.2.119",
-    "@anthropic-ai/claude-code": "^2.1.121",
+    "@ai-sdk/openai": "^3.0.58",
+    "@anthropic-ai/claude-agent-sdk": "^0.2.126",
+    "@anthropic-ai/claude-code": "^2.1.126",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@openai/codex-sdk": "^0.125.0",
+    "@openai/codex-sdk": "^0.128.0",
     "@vscode/ripgrep": "^1.17.1",
     "ai": "^6.0.168",
     "better-sqlite3": "^12.5.0",

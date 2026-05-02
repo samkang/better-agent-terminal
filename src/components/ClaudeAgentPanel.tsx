@@ -15,6 +15,7 @@ import { filenameForPastedImage, readFileAsDataUrl } from '../utils/file-data-ur
 import { extractInterruptedContinuation } from '../utils/interrupted-prompt'
 import { autoCompactWindowForClaudeSelection, displayNameForClaudeSelection, normalizeClaudeModelSelection, sdkModelForClaudeSelection } from '../utils/claude-model-presets'
 import { firstMeaningfulLine, formatContentSize, truncateMiddle } from './CodexAgentPanel.helpers'
+import { normalizePendingAskUser, summarizeAskUserInput } from './AskUserQuestion.helpers'
 
 interface SessionMeta {
   model?: string
@@ -922,7 +923,7 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
 
       api.onAskUser((sid: string, data: unknown) => {
         if (sid !== sessionId) return
-        setPendingQuestion(data as PendingAskUser)
+        setPendingQuestion(normalizePendingAskUser(data) as PendingAskUser)
         setAskAnswers({})
         setAskOtherText({})
       }),
@@ -2419,6 +2420,8 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
 
   const toolInputSummary = (_toolName: string, input: Record<string, unknown>): string => {
     // Show a compact one-line summary of tool input
+    const askUserSummary = summarizeAskUserInput(input)
+    if (askUserSummary) return askUserSummary
     if (input.command) return String(input.command).slice(0, 80)
     if (input.file_path) return String(input.file_path)
     if (input.pattern) return String(input.pattern)

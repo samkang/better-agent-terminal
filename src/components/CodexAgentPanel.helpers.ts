@@ -1,4 +1,5 @@
 import type { MessageItem } from './CodexAgentPanel.types'
+import { summarizeAskUserInput } from './AskUserQuestion.helpers'
 
 export function shouldAutoContinueAfterTurnEnd(payload: { reason?: string; error?: string } | null | undefined): boolean {
   if (!payload) return false
@@ -9,6 +10,8 @@ export function shouldAutoContinueAfterTurnEnd(payload: { reason?: string; error
 }
 
 export function toolInputSummary(_toolName: string, input: Record<string, unknown>): string {
+  const askUserSummary = summarizeAskUserInput(input)
+  if (askUserSummary) return askUserSummary
   if (input.command) return String(input.command).slice(0, 80)
   if (input.file_path) return String(input.file_path)
   if (input.pattern) return String(input.pattern)
