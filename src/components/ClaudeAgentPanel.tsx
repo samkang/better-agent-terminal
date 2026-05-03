@@ -1541,6 +1541,10 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
     if (!isStreaming && (trimmed === '/new' || trimmed === '/clear')) {
       clearInput()
       setMessages([])
+      setLoadedArchive([])
+      archivedCountRef.current = 0
+      loadedFromArchiveRef.current = 0
+      setHasMoreArchived(false)
       setStreamingText('')
       setStreamingThinking('')
       cacheHistoryRef.current = []
