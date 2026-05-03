@@ -24,6 +24,11 @@
     "remoteMissingInfo": "Remote profile is missing connection info."
   },
 
+  "quickPick": {
+    "searchPlaceholder": "Type to filter terminal type…",
+    "noMatches": "No matching terminal types"
+  },
+
   "settings": {
     "title": "Settings",
     "tabGeneral": "General",

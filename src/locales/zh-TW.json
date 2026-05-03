@@ -24,6 +24,11 @@
     "remoteMissingInfo": "遠端設定檔缺少連線資訊。"
   },
 
+  "quickPick": {
+    "searchPlaceholder": "輸入以篩選終端機類型…",
+    "noMatches": "沒有符合的終端機類型"
+  },
+
   "settings": {
     "title": "設定",
     "tabGeneral": "一般",

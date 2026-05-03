@@ -7,6 +7,7 @@ import { ThumbnailBar } from './ThumbnailBar'
 import { CloseConfirmDialog } from './CloseConfirmDialog'
 import { ResizeHandle } from './ResizeHandle'
 import { FolderPicker } from './FolderPicker'
+import { NewTerminalQuickPick, type QuickPickChoice } from './NewTerminalQuickPick'
 import { AgentPresetId, getAgentPreset, getVisiblePresets } from '../types/agent-presets'
 import { isProcfileName } from '../utils/procfile-parser'
 
@@ -120,6 +121,7 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
   const [isGitRepo, setIsGitRepo] = useState(false)
   const [detectedProcfiles, setDetectedProcfiles] = useState<string[]>([])
   const [showProcfilePicker, setShowProcfilePicker] = useState(false)
+  const [showQuickPick, setShowQuickPick] = useState(false)
 
   // Detect git repo, GitHub remote, and Procfiles
   useEffect(() => {
@@ -534,6 +536,16 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
     setShowProcfilePicker(false)
   }, [workspace.id])
 
+  const handleQuickPickSelect = useCallback((choice: QuickPickChoice) => {
+    if (choice.kind === 'terminal') {
+      void handleAddTerminal()
+    } else if (choice.kind === 'worktree') {
+      void handleAddWorktreeTerminal()
+    } else {
+      void handleAddAgent(choice.presetId)
+    }
+  }, [handleAddTerminal, handleAddWorktreeTerminal, handleAddAgent])
+
   const isDebugMode = window.electronAPI?.debug?.isDebugMode
 
   const handleCloseTerminal = useCallback((id: string) => {
@@ -554,6 +566,24 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
       workspaceStore.save()
     }
   }, [terminals])
+
+  // Keyboard shortcut bridges: Cmd+T / Ctrl+Shift+T opens the quick-pick;
+  // Cmd+Shift+W / Ctrl+Shift+W closes the focused terminal. App.tsx dispatches
+  // the events; only the active workspace responds.
+  useEffect(() => {
+    if (!isActive) return
+    const handleQuickPickEvent = () => setShowQuickPick(true)
+    const handleCloseEvent = (e: Event) => {
+      const { terminalId } = (e as CustomEvent).detail as { terminalId: string }
+      if (terminalId) handleCloseTerminal(terminalId)
+    }
+    window.addEventListener('workspace-add-terminal-quick-pick', handleQuickPickEvent)
+    window.addEventListener('workspace-close-terminal', handleCloseEvent as EventListener)
+    return () => {
+      window.removeEventListener('workspace-add-terminal-quick-pick', handleQuickPickEvent)
+      window.removeEventListener('workspace-close-terminal', handleCloseEvent as EventListener)
+    }
+  }, [isActive, handleCloseTerminal])
 
   const handleConfirmClose = useCallback((cleanWorktree = false) => {
     if (showCloseConfirm) {
@@ -778,6 +808,13 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
           confirmLabel="Use selected Procfile"
           onSelect={handleProcfilePickerSelect}
           onClose={() => setShowProcfilePicker(false)}
+        />
+      )}
+      {showQuickPick && (
+        <NewTerminalQuickPick
+          isGitRepo={isGitRepo}
+          onSelect={handleQuickPickSelect}
+          onClose={() => setShowQuickPick(false)}
         />
       )}
     </div>

@@ -172,6 +172,8 @@ After installing, run `cx lang add <language>` for each language you want gramma
 | `Ctrl+↑/↓` / `Cmd+↑/↓` | Switch to previous / next workspace |
 | `Ctrl+P` / `Cmd+P` | File picker (search & attach files to agent context) |
 | `Ctrl+N` / `Cmd+N` | Open new window |
+| `Ctrl+Shift+T` / `Cmd+T` | Open the new-terminal quick-pick (choose Shell, Worktree, Claude / Codex agent…) |
+| `Ctrl+Shift+W` / `Cmd+Shift+W` | Close the focused terminal |
 | `Shift+Tab` | Switch between Terminal and Agent mode |
 | `Enter` | Send message |
 | `Shift+Enter` | Insert newline (multiline input) |

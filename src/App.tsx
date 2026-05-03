@@ -306,6 +306,38 @@ export default function App() {
         workspaceStore.setActiveWorkspace(workspaces[nextIndex].id)
         return
       }
+
+      // Cmd+T (mac) / Ctrl+Shift+T (win/linux): open new-terminal quick-pick.
+      // We intentionally do NOT use Ctrl+T on Windows/Linux because most
+      // terminals/browsers reserve it; Ctrl+Shift+T mirrors Konsole.
+      const isOpenTerminal =
+        (e.metaKey && !e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === 't') ||
+        (e.ctrlKey && !e.metaKey && e.shiftKey && e.key.toLowerCase() === 't')
+      if (isOpenTerminal) {
+        e.preventDefault()
+        const currentState = workspaceStore.getState()
+        if (!currentState.activeWorkspaceId) return
+        // Make sure the terminal tab is visible so the new terminal is in view.
+        window.dispatchEvent(new CustomEvent('workspace-switch-tab', { detail: { tab: 'terminal' } }))
+        window.dispatchEvent(new CustomEvent('workspace-add-terminal-quick-pick'))
+        return
+      }
+
+      // Cmd+Shift+W (mac) / Ctrl+Shift+W (win/linux): close focused terminal.
+      // Plain Cmd+W is intentionally NOT used — it collides with the OS-level
+      // window-close, which would close the BAT window AND drop the terminal
+      // from the preserved workspace state.
+      const isCloseTerminal =
+        e.shiftKey && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'w'
+      if (isCloseTerminal) {
+        e.preventDefault()
+        const currentState = workspaceStore.getState()
+        if (!currentState.focusedTerminalId) return
+        window.dispatchEvent(new CustomEvent('workspace-close-terminal', {
+          detail: { terminalId: currentState.focusedTerminalId },
+        }))
+        return
+      }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)

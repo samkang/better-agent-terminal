@@ -22,6 +22,10 @@
     "remoteConnectionFailedFallback": "远程连接失败：{{error}}\n正在切换回本地配置文件。",
     "remoteMissingInfo": "远程配置文件缺少连接信息。"
   },
+  "quickPick": {
+    "searchPlaceholder": "输入以筛选终端类型…",
+    "noMatches": "没有符合的终端类型"
+  },
   "settings": {
     "title": "设置",
     "tabGeneral": "常规",
