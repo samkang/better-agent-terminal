@@ -490,8 +490,19 @@
   font-weight: 500;
   font-size: 11px;
   min-width: 0;
+  flex: 1 1 auto;
+  /* Allow up to two lines so a slightly-too-long process name doesn't get
+     ellipsized into uselessness when the action buttons consume most of the
+     card width. Falls back to single-line ellipsis on browsers without
+     -webkit-line-clamp. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  white-space: normal;
   overflow: hidden;
   text-overflow: ellipsis;
+  word-break: break-word;
+  line-height: 1.2;
   user-select: none;
 }
 
