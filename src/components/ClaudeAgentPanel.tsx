@@ -3412,8 +3412,9 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
       {pendingQuestion && (
         <div className="claude-ask-card">
           {pendingQuestion.questions.map((q, qi) => {
+            const qKey = q.question || String(qi)
             const hasPreview = q.options.some(opt => opt.markdown)
-            const selectedLabel = askAnswers[String(qi)]
+            const selectedLabel = askAnswers[qKey]
             const selectedPreview = selectedLabel
               ? q.options.find(opt => opt.label === selectedLabel)?.markdown
               : undefined
@@ -3426,8 +3427,8 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
                     {q.options.map((opt, oi) => (
                       <button
                         key={oi}
-                        className={`claude-ask-option ${askAnswers[String(qi)] === opt.label ? 'selected' : ''}`}
-                        onClick={() => setAskAnswers(prev => ({ ...prev, [String(qi)]: opt.label }))}
+                        className={`claude-ask-option ${askAnswers[qKey] === opt.label ? 'selected' : ''}`}
+                        onClick={() => { setAskAnswers(prev => ({ ...prev, [qKey]: opt.label })); setAskOtherText(prev => { const next = { ...prev }; delete next[qKey]; return next }) }}
                         title={opt.description}
                       >
                         {opt.label}
@@ -3438,8 +3439,8 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, onClos
                     <input
                       type="text"
                       placeholder={t('claude.other')}
-                      value={askOtherText[String(qi)] || ''}
-                      onChange={e => setAskOtherText(prev => ({ ...prev, [String(qi)]: e.target.value }))}
+                      value={askOtherText[qKey] || ''}
+                      onChange={e => { setAskOtherText(prev => ({ ...prev, [qKey]: e.target.value })); if (e.target.value) setAskAnswers(prev => { const next = { ...prev }; delete next[qKey]; return next }) }}
                     />
                   </div>
                 </div>
