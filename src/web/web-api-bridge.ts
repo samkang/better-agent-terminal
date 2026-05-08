@@ -40,6 +40,13 @@ const PARTIAL_STUBS: Record<string, Record<string, unknown>> = {
  * Method-name → event-channel rule: stripped 'on' prefix, lowercased,
  * then prefixed with namespace + ':'. `onToolUse` → `tool-use`.
  */
+// Event channel overrides — host uses camelCase for a handful of events.
+// Sourced from electron/remote/protocol.ts PROXIED_EVENTS. Add to this map
+// if a renderer subscription silently fails to receive events.
+const EVENT_CHANNEL_OVERRIDES: Record<string, string> = {
+  'claude:mode-change': 'claude:modeChange',
+}
+
 function eventChannelFor(namespace: string, method: string): string | null {
   if (!method.startsWith('on') || method.length < 3) return null
   // Trim 'on' and convert PascalCase → kebab-case
@@ -47,7 +54,8 @@ function eventChannelFor(namespace: string, method: string): string | null {
     .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
     .replace(/([A-Z]+)([A-Z][a-z])/g, '$1-$2')
     .toLowerCase()
-  return `${namespace}:${tail}`
+  const derived = `${namespace}:${tail}`
+  return EVENT_CHANNEL_OVERRIDES[derived] ?? derived
 }
 
 /**
