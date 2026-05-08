@@ -2,7 +2,7 @@
  * Run: pnpm exec tsx tests/web-channel-name.test.ts
  */
 import * as assert from 'assert'
-import { toChannelName } from '../src/web/channel-name'
+import { toChannelName, resolveChannel } from '../src/web/channel-name'
 
 let passed = 0, failed = 0
 function test(name: string, fn: () => void) {
@@ -34,6 +34,17 @@ test('snippet.getAll preserves all-lower → snippet:getAll? no, kebab', () => {
   // inconsistent. We choose: ALWAYS kebab. Document the exceptions in stubs.ts
   // if they break.
   assert.strictEqual(toChannelName('snippet', 'getAll'), 'snippet:get-all')
+})
+
+console.log('\nresolveChannel (with overrides)')
+test('snippet.getAll uses override → snippet:getAll', () => {
+  assert.strictEqual(resolveChannel('snippet', 'getAll'), 'snippet:getAll')
+})
+test('git.getRoot uses override → git:getRoot', () => {
+  assert.strictEqual(resolveChannel('git', 'getRoot'), 'git:getRoot')
+})
+test('pty.getCwd has no override → pty:get-cwd', () => {
+  assert.strictEqual(resolveChannel('pty', 'getCwd'), 'pty:get-cwd')
 })
 
 console.log(`\n${passed} passed, ${failed} failed`)
