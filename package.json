@@ -10,6 +10,7 @@
   },
   "scripts": {
     "dev": "cross-env BAT_DEBUG=1 vite",
+    "dev:web": "vite --config vite.config.web.ts",
     "dev-runtime": "cross-env BAT_DEBUG=1 BAT_RUNTIME=1 vite",
     "verify-runtime": "pnpm run compile && cross-env BAT_DEBUG=1 BAT_RUNTIME=verify electron .",
     "compile": "vite build",
