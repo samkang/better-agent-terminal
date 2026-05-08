@@ -79,3 +79,39 @@ export const workspaceLocalStubs = {
   // window.location.search-derived; safe to compute in browser
   getDetachedId: () => new URLSearchParams(window.location.search).get('detached'),
 }
+
+// `remote.*` manages outbound connections to other bat-servers. In web mode
+// we ARE already inside the host — the whole namespace is meaningless.
+// Stub everything to safe "not running / not connected" defaults so the
+// Settings panel and connection-status indicators don't blow up.
+export const remoteStubs = {
+  startServer: () => Promise.resolve({ error: 'unavailable in web' } as { error: string }),
+  stopServer: () => Promise.resolve(false),
+  serverStatus: () => Promise.resolve({
+    running: false, port: null, fingerprint: null,
+    bindInterface: null, boundHost: null, clients: [] as Array<{ label: string; connectedAt: number }>,
+  }),
+  connect: () => Promise.resolve({ error: 'unavailable in web' } as { error: string }),
+  disconnect: () => Promise.resolve(false),
+  clientStatus: () => Promise.resolve({ connected: false, info: null }),
+  testConnection: () => Promise.resolve({ ok: false, error: 'unavailable in web' }),
+  listProfiles: () => Promise.resolve({ error: 'unavailable in web' } as { error: string }),
+}
+
+// `tunnel.getConnection` returns QR-code data for mobile pairing — only
+// makes sense from the host side. Stub to a benign error.
+export const tunnelStubs = {
+  getConnection: () => Promise.resolve({ error: 'unavailable in web' } as { error: string }),
+}
+
+// Notification center is host-side; web mode doesn't have one.
+export const notificationStubs = {
+  list: () => Promise.resolve([]),
+  markRead: (_id: string) => Promise.resolve(false),
+  markAllRead: () => Promise.resolve(false),
+  markWindowRead: () => Promise.resolve(false),
+  clear: () => Promise.resolve(false),
+  focusLatestUnread: () => Promise.resolve(null),
+  focusEntry: (_id: string) => Promise.resolve(null),
+  onUpdate: (_cb: (entries: unknown[]) => void) => () => {},
+}

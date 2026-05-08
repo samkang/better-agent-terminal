@@ -3,6 +3,7 @@ import { WebWsClient } from './web-ws-client'
 import {
   shellStubs, dialogStubs, imageStubs, clipboardStubs,
   appStubs, updateStubs, debugStubs, workspaceLocalStubs,
+  remoteStubs, tunnelStubs, notificationStubs,
 } from './stubs'
 
 /**
@@ -17,6 +18,9 @@ function buildStubNamespaces() {
     clipboard: clipboardStubs,
     update: updateStubs,
     debug: debugStubs,
+    remote: remoteStubs,
+    tunnel: tunnelStubs,
+    notification: notificationStubs,
   } as const
 }
 
