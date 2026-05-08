@@ -8,17 +8,7 @@
  * Browser-only — uses native WebSocket. No Node imports.
  */
 
-type FrameType = 'invoke' | 'invoke-result' | 'invoke-error' | 'event' | 'auth' | 'auth-result' | 'ping' | 'pong'
-
-interface RemoteFrame {
-  type: FrameType
-  id: string
-  channel?: string
-  args?: unknown[]
-  result?: unknown
-  error?: string
-  token?: string
-}
+import type { RemoteFrame, RemoteFrameType } from '../../electron/remote/protocol'
 
 interface PendingInvoke {
   resolve: (result: unknown) => void
@@ -207,5 +197,6 @@ export class WebWsClient {
       this.ws = null
     }
     this.setState('closed')
+    this.stateListeners.clear()
   }
 }
