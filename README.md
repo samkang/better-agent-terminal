@@ -550,6 +550,52 @@ Environment variable equivalents: `BAT_PORT`, `BAT_BIND`, `BAT_DATA_DIR`, `BAT_T
 
 > **Note:** Headless mode runs without the OS keychain, so persisted tokens are stored in plaintext under `--data-dir`. Treat that directory like any other secret.
 
+### Web Browser Client (experimental)
+
+In addition to BAT-to-BAT and mobile QR pairing, you can also drive a host from any modern web browser. The browser loads the same React renderer used by the desktop app, but routes every IPC call through the host's WebSocket server. Two host setups work equally well — pick whichever fits your environment.
+
+#### Mode A — Desktop BAT app as host
+
+Use this when you already run BAT on your workstation and just want a second face on the same machine (or another device on the LAN).
+
+1. Open BAT, go to **Settings → Remote Access**
+2. Tick **「啟動 BAT 時自動啟動伺服器」** (auto-start server on launch)
+3. Either click **「啟動伺服器」** to start now, or just relaunch the app
+4. Copy the **連線 Token** shown below
+
+The desktop app is now both a regular BAT window AND a host. Browser clients see the same workspaces, Claude accounts, and session state as the GUI window — they share the same data directory.
+
+#### Mode B — Headless `bat-server`
+
+Use this on a VPS, a home server, or any machine without a desktop. See the [Headless Mode](#headless-mode-bat-server) section above for installation. Start with:
+
+```bash
+bat-server --bind=all --port=9876
+```
+
+The startup banner prints the token and connection URL. No GUI is opened.
+
+#### Browser side (development build)
+
+The web bundle isn't published yet — for now you run the dev server from a checkout of the repo:
+
+```bash
+git clone https://github.com/tony1223/better-agent-terminal.git
+cd better-agent-terminal
+corepack enable
+pnpm install
+pnpm run dev:web    # http://localhost:5173
+```
+
+Open `http://localhost:5173/?token=<your-token>` in any browser. The dev server proxies the WebSocket connection from `ws://localhost:5173/ws` to `wss://localhost:9876`, bypassing the self-signed certificate that bat-server uses. Override the host platform with `?platform=darwin|linux|win32` if needed.
+
+#### v0 limitations
+
+- No multi-user isolation: every browser tab connecting with the same token sees the same broadcast events.
+- No auth UI: token is passed via URL query.
+- Settings dialogs and file pickers fall back to browser prompts (`window.open`, `<input type=file>`); some panels (notification center, mobile QR pairing) are stubbed and won't surface meaningful data.
+- Self-signed cert means the prod build (without the Vite proxy) requires either a real cert or a manual cert-trust step. Phase C will address this.
+
 ---
 
 ## Configuration
