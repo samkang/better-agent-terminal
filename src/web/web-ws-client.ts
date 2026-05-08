@@ -8,7 +8,21 @@
  * Browser-only — uses native WebSocket. No Node imports.
  */
 
-import type { RemoteFrame, RemoteFrameType } from '../../electron/remote/protocol'
+// Inline copies of RemoteFrame types from electron/remote/protocol.ts.
+// Cross-project import would trip TS6305 (electron/ is a referenced project),
+// and bundling protocol.ts via Vite would pull in unrelated server code.
+// The protocol is stable — drift risk is negligible for v0.
+type RemoteFrameType = 'invoke' | 'invoke-result' | 'invoke-error' | 'event' | 'auth' | 'auth-result' | 'ping' | 'pong'
+
+interface RemoteFrame {
+  type: RemoteFrameType
+  id: string
+  channel?: string
+  args?: unknown[]
+  result?: unknown
+  error?: string
+  token?: string
+}
 
 interface PendingInvoke {
   resolve: (result: unknown) => void
